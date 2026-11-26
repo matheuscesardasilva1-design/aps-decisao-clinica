@@ -17,17 +17,22 @@ import {
   AlertCircle,
   ShieldCheck,
   BookOpen,
-  Layers,
+  FileText,
 } from "lucide-react";
 import type { SearchResultItem } from "@/types/clinical";
 import { cn } from "@/lib/utils";
 
-interface ChapterPageStub {
+interface ChapterPageFull {
+  id: string;
   numero_pagina: number;
+  imagem_webp_path: string;
   capitulo_tema: string;
   subtitulo_pagina: string;
+  palavras_chave_clinicas: string[];
   possui_fluxograma: boolean;
   possui_receita_modelo: boolean;
+  texto_receita_verbatim: string | null;
+  texto_indexacao: string;
 }
 
 interface ManualPageViewerProps {
@@ -41,22 +46,88 @@ export function ManualPageViewer({
   onNavigatePage,
   navigating,
 }: ManualPageViewerProps) {
+  const [chapterPages, setChapterPages] = React.useState<ChapterPageFull[]>([]);
+  const [loadingChapter, setLoadingChapter] = React.useState(true);
+  const [activePageNum, setActivePageNum] = React.useState<number>(
+    item.numero_pagina ?? 1
+  );
+
   const [signedUrl, setSignedUrl] = React.useState<string | null>(null);
   const [loadingImg, setLoadingImg] = React.useState(true);
   const [imgError, setImgError] = React.useState<string | null>(null);
   const [zoom, setZoom] = React.useState(100);
   const [fullscreen, setFullscreen] = React.useState(false);
-  const [copied, setCopied] = React.useState(false);
-  const [chapterPages, setChapterPages] = React.useState<ChapterPageStub[]>([]);
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
-  // Carrega Signed URL privada da imagem WebP
+  // 1. Carrega TODAS as páginas do tema/capítulo agrupado
+  React.useEffect(() => {
+    let active = true;
+    setLoadingChapter(true);
+    setActivePageNum(item.numero_pagina ?? 1);
+
+    async function fetchChapter() {
+      if (!item.manual_id) {
+        setChapterPages([]);
+        setLoadingChapter(false);
+        return;
+      }
+      try {
+        const params = new URLSearchParams({
+          manualId: item.manual_id,
+          capitulo: item.titulo || "",
+          page: String(item.numero_pagina ?? 1),
+        });
+        const res = await fetch(`/api/manual-chapter?${params.toString()}`);
+        const data = (await res.json()) as { pages?: ChapterPageFull[] };
+        if (active) {
+          const pages = data.pages || [];
+          setChapterPages(pages);
+          // Prioriza exibir automaticamente a primeira página com Fluxograma do capítulo!
+          const firstFlowchart = pages.find((p) => p.possui_fluxograma);
+          if (firstFlowchart) {
+            setActivePageNum(firstFlowchart.numero_pagina);
+          } else if (pages.length > 0) {
+            setActivePageNum(item.numero_pagina ?? pages[0].numero_pagina);
+          }
+        }
+      } catch {
+        if (active) setChapterPages([]);
+      } finally {
+        if (active) setLoadingChapter(false);
+      }
+    }
+
+    fetchChapter();
+    return () => {
+      active = false;
+    };
+  }, [item.id, item.manual_id, item.titulo, item.numero_pagina]);
+
+  // Página atualmente selecionada no visualizador de fluxograma/imagem abaixo
+  const activePage = React.useMemo(() => {
+    const found = chapterPages.find((p) => p.numero_pagina === activePageNum);
+    if (found) return found;
+    return {
+      id: item.id,
+      numero_pagina: item.numero_pagina ?? 1,
+      imagem_webp_path: item.imagem_webp_path || "",
+      capitulo_tema: item.titulo,
+      subtitulo_pagina: item.subtitulo,
+      palavras_chave_clinicas: item.palavras_chave || [],
+      possui_fluxograma: item.possui_fluxograma,
+      possui_receita_modelo: item.possui_receita_modelo,
+      texto_receita_verbatim: item.texto_receita_verbatim,
+      texto_indexacao: item.texto_indexacao || "",
+    };
+  }, [chapterPages, activePageNum, item]);
+
+  // 2. Carrega Signed URL privada apenas para a imagem da página ativa no visualizador
   React.useEffect(() => {
     let active = true;
     setZoom(100);
-    setCopied(false);
 
     async function fetchSignedUrl() {
-      if (!item.imagem_webp_path) {
+      if (!activePage.imagem_webp_path) {
         setSignedUrl(null);
         setLoadingImg(false);
         return;
@@ -65,15 +136,13 @@ export function ManualPageViewer({
       setImgError(null);
       try {
         const res = await fetch(
-          `/api/page-image?path=${encodeURIComponent(item.imagem_webp_path)}`
+          `/api/page-image?path=${encodeURIComponent(activePage.imagem_webp_path)}`
         );
         const data = (await res.json()) as { signedUrl?: string; error?: string };
         if (!res.ok || !data.signedUrl) {
           throw new Error(data.error || "Falha ao obter URL segura.");
         }
-        if (active) {
-          setSignedUrl(data.signedUrl);
-        }
+        if (active) setSignedUrl(data.signedUrl);
       } catch (err) {
         if (active) {
           setImgError(
@@ -89,36 +158,7 @@ export function ManualPageViewer({
     return () => {
       active = false;
     };
-  }, [item.id, item.imagem_webp_path]);
-
-  // Carrega mapa de páginas do mesmo capítulo/tema para salto em 1 clique
-  React.useEffect(() => {
-    let active = true;
-    async function fetchChapter() {
-      if (!item.manual_id) {
-        setChapterPages([]);
-        return;
-      }
-      try {
-        const params = new URLSearchParams({
-          manualId: item.manual_id,
-          capitulo: item.titulo || "",
-          page: String(item.numero_pagina ?? 1),
-        });
-        const res = await fetch(`/api/manual-chapter?${params.toString()}`);
-        const data = (await res.json()) as { pages?: ChapterPageStub[] };
-        if (active) {
-          setChapterPages(data.pages || []);
-        }
-      } catch {
-        if (active) setChapterPages([]);
-      }
-    }
-    fetchChapter();
-    return () => {
-      active = false;
-    };
-  }, [item.manual_id, item.titulo, item.numero_pagina]);
+  }, [activePage.imagem_webp_path]);
 
   // Fechar tela cheia com ESC
   React.useEffect(() => {
@@ -130,207 +170,181 @@ export function ManualPageViewer({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [fullscreen]);
 
-  const handleCopyPrescription = async () => {
-    if (!item.texto_receita_verbatim) return;
+  const handleCopyPrescription = async (id: string, text: string) => {
     try {
-      await navigator.clipboard.writeText(item.texto_receita_verbatim);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+      await navigator.clipboard.writeText(text);
     } catch {
       const textarea = document.createElement("textarea");
-      textarea.value = item.texto_receita_verbatim;
+      textarea.value = text;
       document.body.appendChild(textarea);
       textarea.select();
       document.execCommand("copy");
       document.body.removeChild(textarea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
+    }
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2500);
+  };
+
+  // Consolida receitas, tags e páginas de fluxograma do capítulo inteiro
+  const allPrescriptions = React.useMemo(() => {
+    const list = chapterPages.filter((p) => p.texto_receita_verbatim);
+    if (list.length > 0) return list;
+    if (item.texto_receita_verbatim) return [activePage];
+    return [];
+  }, [chapterPages, item.texto_receita_verbatim, activePage]);
+
+  const allKeywords = React.useMemo(() => {
+    const set = new Set<string>();
+    (chapterPages.length > 0 ? chapterPages : [activePage]).forEach((p) =>
+      (p.palavras_chave_clinicas || []).forEach((k) => set.add(k))
+    );
+    return Array.from(set).slice(0, 16);
+  }, [chapterPages, activePage]);
+
+  const flowchartPages = React.useMemo(
+    () => chapterPages.filter((p) => p.possui_fluxograma),
+    [chapterPages]
+  );
+
+  const pageRangeLabel = React.useMemo(() => {
+    if (chapterPages.length <= 1) return `Pág. ${activePage.numero_pagina}`;
+    const first = chapterPages[0].numero_pagina;
+    const last = chapterPages[chapterPages.length - 1].numero_pagina;
+    return `Págs. ${first}–${last} (${chapterPages.length} páginas agrupadas)`;
+  }, [chapterPages, activePage.numero_pagina]);
+
+  const totalPages = item.manual_total_paginas ?? activePage.numero_pagina;
+  const canGoPrev = Boolean(item.manual_id && activePage.numero_pagina > 1 && !navigating);
+  const canGoNext = Boolean(item.manual_id && activePage.numero_pagina < totalPages && !navigating);
+
+  const handleStepPage = (delta: number) => {
+    const target = activePage.numero_pagina + delta;
+    if (chapterPages.some((p) => p.numero_pagina === target)) {
+      setActivePageNum(target);
+    } else if (item.manual_id) {
+      onNavigatePage(item.manual_id, target);
     }
   };
 
-  const currentPage = item.numero_pagina ?? 1;
-  const totalPages = item.manual_total_paginas ?? currentPage;
-  const canGoPrev = Boolean(item.manual_id && currentPage > 1 && !navigating);
-  const canGoNext = Boolean(item.manual_id && currentPage < totalPages && !navigating);
-
   return (
-    <div className="flex h-full flex-col gap-3.5 overflow-y-auto pr-1 pb-6">
-      {/* 1. Cabeçalho + Barra de Salto Rápido do Capítulo */}
-      <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="mb-1.5 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-md bg-sky-100 dark:bg-sky-900/50 px-2 py-0.5 text-xs font-semibold text-[#0284C7] dark:text-sky-300">
-                {item.fonte_label}
-              </span>
-              {item.possui_fluxograma && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
-                  <GitBranch className="h-3 w-3" />
-                  Contém Fluxograma Original
-                </span>
-              )}
-              {item.possui_receita_modelo && (
-                <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-                  <ClipboardList className="h-3 w-3" />
-                  Contém Receita Modelo
-                </span>
-              )}
-            </div>
-            <h2 className="text-base font-semibold text-[#0F172A] dark:text-[#F1F5F9]">
-              {item.titulo}
-            </h2>
-            {item.subtitulo && (
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {item.subtitulo}
-              </p>
-            )}
-          </div>
-
-          {/* Navegação Anterior / Próxima */}
-          <div className="inline-flex items-center rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0B1120] p-0.5">
-            <button
-              type="button"
-              disabled={!canGoPrev}
-              onClick={() =>
-                item.manual_id && onNavigatePage(item.manual_id, currentPage - 1)
-              }
-              title="Página Anterior"
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              <span className="hidden xl:inline">Anterior</span>
-            </button>
-            <span className="px-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-              {navigating ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                `${currentPage} / ${totalPages}`
-              )}
+    <div className="flex h-full flex-col gap-4 overflow-y-auto pr-1 pb-8">
+      {/* 1. Cabeçalho Consolidado do Tema */}
+      <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-5 shadow-sm">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center rounded-md bg-sky-100 dark:bg-sky-900/50 px-2.5 py-0.5 text-xs font-semibold text-[#0284C7] dark:text-sky-300">
+            {item.manual_titulo} {item.manual_versao} • {pageRangeLabel}
+          </span>
+          {flowchartPages.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
+              <GitBranch className="h-3 w-3" />
+              {flowchartPages.length} Fluxograma(s) Original(is)
             </span>
-            <button
-              type="button"
-              disabled={!canGoNext}
-              onClick={() =>
-                item.manual_id && onNavigatePage(item.manual_id, currentPage + 1)
-              }
-              title="Próxima Página"
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 disabled:opacity-40"
-            >
-              <span className="hidden xl:inline">Próxima</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          )}
+          {allPrescriptions.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+              <ClipboardList className="h-3 w-3" />
+              {allPrescriptions.length} Receita(s) Modelo
+            </span>
+          )}
         </div>
 
-        {/* Salto Direto para Páginas / Fluxogramas / Receitas do Mesmo Capítulo */}
-        {chapterPages.length > 1 && item.manual_id && (
-          <div className="mt-3 border-t border-[#E2E8F0] dark:border-[#334155] pt-2.5">
-            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-              <Layers className="h-3.5 w-3.5 text-[#0284C7]" />
-              Ir direto neste capítulo (sem precisar folhear):
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {chapterPages.map((p) => {
-                const isCurrent = p.numero_pagina === currentPage;
-                return (
-                  <button
-                    key={p.numero_pagina}
-                    type="button"
-                    disabled={navigating || isCurrent}
-                    onClick={() =>
-                      item.manual_id && onNavigatePage(item.manual_id, p.numero_pagina)
-                    }
-                    title={p.subtitulo_pagina || p.capitulo_tema}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors",
-                      isCurrent
-                        ? "bg-[#0284C7] text-white shadow-sm"
-                        : "border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0B1120] text-slate-700 dark:text-slate-200 hover:border-[#0284C7]"
-                    )}
-                  >
-                    <span>Pág. {p.numero_pagina}</span>
-                    {p.possui_fluxograma && (
-                      <GitBranch
-                        className={cn(
-                          "h-3 w-3",
-                          isCurrent ? "text-sky-100" : "text-indigo-500"
-                        )}
-                      />
-                    )}
-                    {p.possui_receita_modelo && (
-                      <ClipboardList
-                        className={cn(
-                          "h-3 w-3",
-                          isCurrent ? "text-amber-200" : "text-amber-500"
-                        )}
-                      />
-                    )}
-                    {p.subtitulo_pagina && (
-                      <span
-                        className={cn(
-                          "hidden sm:inline max-w-[140px] truncate",
-                          isCurrent ? "text-sky-100" : "text-slate-400"
-                        )}
-                      >
-                        • {p.subtitulo_pagina}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+        <h2 className="text-lg font-semibold text-[#0F172A] dark:text-[#F1F5F9]">
+          {item.titulo}
+        </h2>
+
+        {allKeywords.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {allKeywords.map((tag, idx) => (
+              <span
+                key={idx}
+                className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300"
+              >
+                {tag}
+              </span>
+            ))}
           </div>
         )}
       </div>
 
-      {/* 2. Informações Principais da Página (Leitura Rápida ANTES da Imagem) */}
-      {item.texto_indexacao && (
-        <section className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-4 shadow-sm">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#0284C7] dark:text-sky-400">
-              <BookOpen className="h-3.5 w-3.5" />
-              Pontos-Chave desta Página
-            </h3>
-            {item.possui_fluxograma && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-300 font-medium">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Para decisão em fluxograma, confira a imagem original abaixo
-              </span>
-            )}
-          </div>
-          <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-200">
-            {item.texto_indexacao}
-          </p>
-
-          {item.palavras_chave && item.palavras_chave.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#E2E8F0] dark:border-[#334155] pt-2.5">
-              {item.palavras_chave.slice(0, 12).map((tag, idx) => (
-                <span
-                  key={idx}
-                  className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
+      {/* 2. Informações Principais Consolidadas de TODO o Capítulo (Leitura Contínua) */}
+      <section className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-5 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] dark:border-[#334155] pb-2.5">
+          <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#0284C7] dark:text-sky-400">
+            <BookOpen className="h-4 w-4" />
+            Informações Principais do Tema (Resumo Consolidado)
+          </h3>
+          {loadingChapter && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Agrupando páginas do capítulo...
+            </span>
           )}
-        </section>
-      )}
+        </div>
 
-      {/* 3. Bloco Destacado de Receita Modelo Verbatim (1-Clique) */}
-      {item.texto_receita_verbatim && (
-        <div className="rounded-xl border border-amber-300/80 dark:border-amber-700/70 bg-amber-50/70 dark:bg-amber-950/30 p-4 shadow-sm">
+        <div className="space-y-3.5">
+          {(chapterPages.length > 0 ? chapterPages : [activePage]).map((p) => (
+            <div
+              key={p.numero_pagina}
+              className="rounded-lg border border-[#E2E8F0]/80 dark:border-[#334155]/80 bg-[#F8FAFC]/80 dark:bg-[#0B1120]/50 p-3.5"
+            >
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-[#0F172A] dark:text-[#F1F5F9]">
+                    {p.subtitulo_pagina || `Seção — Página ${p.numero_pagina}`}
+                  </span>
+                  {p.possui_fluxograma && (
+                    <span className="inline-flex items-center gap-1 rounded bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
+                      <GitBranch className="h-2.5 w-2.5" />
+                      Fluxograma
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setActivePageNum(p.numero_pagina)}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors",
+                    activePage.numero_pagina === p.numero_pagina
+                      ? "bg-[#0284C7] text-white"
+                      : "bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] text-slate-600 dark:text-slate-300 hover:border-[#0284C7]"
+                  )}
+                >
+                  <FileText className="h-3 w-3" />
+                  Ver Pág. {p.numero_pagina} abaixo
+                </button>
+              </div>
+
+              {p.texto_indexacao && (
+                <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+                  {p.texto_indexacao}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 3. Todas as Receitas Modelo do Capítulo (1-Clique Copiar) */}
+      {allPrescriptions.map((p) => (
+        <div
+          key={`rx-${p.numero_pagina}`}
+          className="rounded-xl border border-amber-300/80 dark:border-amber-700/70 bg-amber-50/70 dark:bg-amber-950/30 p-4 shadow-sm"
+        >
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-200">
               <ClipboardList className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              Exemplo de Receita Extraído Verbatim (Pronto para Cópia)
+              Exemplo de Receita Verbatim (Pág. {p.numero_pagina})
             </div>
             <button
               type="button"
-              onClick={handleCopyPrescription}
+              onClick={() =>
+                p.texto_receita_verbatim &&
+                handleCopyPrescription(String(p.numero_pagina), p.texto_receita_verbatim)
+              }
               className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 transition-colors"
             >
-              {copied ? (
+              {copiedId === String(p.numero_pagina) ? (
                 <>
                   <Check className="h-3.5 w-3.5" />
                   Copiado!
@@ -344,59 +358,130 @@ export function ManualPageViewer({
             </button>
           </div>
           <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-amber-200/80 dark:border-amber-800/60 bg-white/90 dark:bg-[#0B1120]/80 p-3 font-mono text-xs leading-relaxed text-slate-800 dark:text-slate-100">
-            {item.texto_receita_verbatim}
+            {p.texto_receita_verbatim}
           </pre>
         </div>
-      )}
+      ))}
 
-      {/* 4. Fluxograma / Página Original em Alta Nitidez */}
+      {/* 4. Fluxogramas & Páginas Originais do Capítulo (Visualizador Fiel 150 DPI) */}
       <section className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] overflow-hidden shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] dark:border-[#334155] px-4 py-2.5 bg-slate-50/80 dark:bg-slate-800/40">
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200">
-            <ShieldCheck className="h-4 w-4 text-[#0D9488]" />
-            {item.possui_fluxograma
-              ? "Fluxograma & Página Original (Fidelidade 100%)"
-              : "Página Original do Manual (150 DPI WebP)"}
-          </span>
-
-          <div className="inline-flex items-center rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0B1120] p-0.5">
-            <button
-              type="button"
-              onClick={() => setZoom((z) => Math.max(60, z - 20))}
-              title="Diminuir Zoom"
-              className="rounded-md p-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-            >
-              <ZoomOut className="h-3.5 w-3.5" />
-            </button>
-            <span className="min-w-[42px] text-center text-[11px] font-medium text-slate-600 dark:text-slate-300">
-              {zoom}%
+        <div className="border-b border-[#E2E8F0] dark:border-[#334155] px-4 py-3 bg-slate-50/80 dark:bg-slate-800/40 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+              <ShieldCheck className="h-4 w-4 text-[#0D9488]" />
+              Fluxogramas & Páginas Originais (Pág. {activePage.numero_pagina})
             </span>
-            <button
-              type="button"
-              onClick={() => setZoom((z) => Math.min(240, z + 20))}
-              title="Aumentar Zoom"
-              className="rounded-md p-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-            >
-              <ZoomIn className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setZoom(100)}
-              title="Resetar Zoom"
-              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setFullscreen(true)}
-              title="Tela Cheia"
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-[#0284C7] dark:text-sky-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-            >
-              <Maximize2 className="h-3.5 w-3.5" />
-              Tela Cheia
-            </button>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Anterior / Próxima */}
+              <div className="inline-flex items-center rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0B1120] p-0.5">
+                <button
+                  type="button"
+                  disabled={!canGoPrev}
+                  onClick={() => handleStepPage(-1)}
+                  title="Página Anterior"
+                  className="rounded-md p-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="px-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                  Pág. {activePage.numero_pagina}
+                </span>
+                <button
+                  type="button"
+                  disabled={!canGoNext}
+                  onClick={() => handleStepPage(1)}
+                  title="Próxima Página"
+                  className="rounded-md p-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {/* Zoom + Tela Cheia */}
+              <div className="inline-flex items-center rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0B1120] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => Math.max(60, z - 20))}
+                  title="Diminuir Zoom"
+                  className="rounded-md p-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <ZoomOut className="h-3.5 w-3.5" />
+                </button>
+                <span className="min-w-[38px] text-center text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  {zoom}%
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => Math.min(240, z + 20))}
+                  title="Aumentar Zoom"
+                  className="rounded-md p-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <ZoomIn className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom(100)}
+                  title="Resetar Zoom"
+                  className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFullscreen(true)}
+                  title="Tela Cheia"
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-[#0284C7] dark:text-sky-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                  Tela Cheia
+                </button>
+              </div>
+            </div>
           </div>
+
+          {/* Abas rápidas das páginas do capítulo (Fluxogramas destacados) */}
+          {chapterPages.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              {chapterPages.map((p) => {
+                const isSelected = p.numero_pagina === activePage.numero_pagina;
+                return (
+                  <button
+                    key={p.numero_pagina}
+                    type="button"
+                    onClick={() => setActivePageNum(p.numero_pagina)}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors",
+                      isSelected
+                        ? "bg-[#0284C7] text-white shadow-sm"
+                        : "border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0B1120] text-slate-700 dark:text-slate-200 hover:border-[#0284C7]"
+                    )}
+                  >
+                    <span>Pág. {p.numero_pagina}</span>
+                    {p.possui_fluxograma && (
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-0.5 text-[10px] font-semibold",
+                          isSelected ? "text-sky-100" : "text-indigo-600 dark:text-indigo-400"
+                        )}
+                      >
+                        <GitBranch className="h-3 w-3" />
+                        Fluxograma
+                      </span>
+                    )}
+                    {p.possui_receita_modelo && (
+                      <ClipboardList
+                        className={cn(
+                          "h-3 w-3",
+                          isSelected ? "text-amber-200" : "text-amber-500"
+                        )}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="overflow-auto bg-slate-100/80 dark:bg-[#0B1120] p-3">
@@ -415,7 +500,7 @@ export function ManualPageViewer({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={signedUrl}
-                alt={`${item.fonte_label} — ${item.titulo}`}
+                alt={`${item.titulo} — Página ${activePage.numero_pagina}`}
                 style={{ width: `${zoom}%`, maxWidth: "none" }}
                 className="rounded-lg bg-white shadow-md transition-all duration-150"
               />
@@ -429,28 +514,24 @@ export function ManualPageViewer({
         <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 p-4 backdrop-blur-sm">
           <div className="mb-3 flex items-center justify-between gap-4 rounded-xl bg-slate-900/90 px-4 py-2.5 text-slate-100 border border-slate-800">
             <div className="truncate text-sm font-medium">
-              {item.fonte_label} — {item.titulo}
+              {item.titulo} — Página {activePage.numero_pagina}
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 disabled={!canGoPrev}
-                onClick={() =>
-                  item.manual_id && onNavigatePage(item.manual_id, currentPage - 1)
-                }
+                onClick={() => handleStepPage(-1)}
                 className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs hover:bg-slate-700 disabled:opacity-40"
               >
-                ← Pág. {currentPage - 1}
+                ← Pág. {activePage.numero_pagina - 1}
               </button>
               <button
                 type="button"
                 disabled={!canGoNext}
-                onClick={() =>
-                  item.manual_id && onNavigatePage(item.manual_id, currentPage + 1)
-                }
+                onClick={() => handleStepPage(1)}
                 className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs hover:bg-slate-700 disabled:opacity-40"
               >
-                Pág. {currentPage + 1} →
+                Pág. {activePage.numero_pagina + 1} →
               </button>
               <button
                 type="button"

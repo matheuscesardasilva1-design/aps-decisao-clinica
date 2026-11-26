@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+function normalizeStem(text: string): string {
+  const clean = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\([^)]*\)/g, "")
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const words = clean.split(" ").filter((w) => w.length > 2);
+  return words.slice(0, 2).join(" ") || clean;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = createClient();
@@ -21,44 +34,35 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "manualId obrigatório." }, { status: 400 });
     }
 
-    // Busca todas as páginas do mesmo capítulo (ou janela de páginas vizinhas se capítulo estiver vazio)
-    let pages:
-      | {
-          numero_pagina: number;
-          capitulo_tema: string;
-          subtitulo_pagina: string;
-          possui_fluxograma: boolean;
-          possui_receita_modelo: boolean;
-        }[]
-      | null = null;
+    const { data: allManualPages, error } = await supabase
+      .from("manual_paginas")
+      .select(
+        "id, numero_pagina, imagem_webp_path, capitulo_tema, subtitulo_pagina, palavras_chave_clinicas, possui_fluxograma, possui_receita_modelo, texto_receita_verbatim, texto_indexacao"
+      )
+      .eq("manual_id", manualId)
+      .order("numero_pagina", { ascending: true });
 
-    if (capitulo.length >= 3) {
-      const { data } = await supabase
-        .from("manual_paginas")
-        .select(
-          "numero_pagina, capitulo_tema, subtitulo_pagina, possui_fluxograma, possui_receita_modelo"
-        )
-        .eq("manual_id", manualId)
-        .ilike("capitulo_tema", `%${capitulo.slice(0, 40)}%`)
-        .order("numero_pagina", { ascending: true })
-        .limit(20);
-      pages = data;
+    if (error || !allManualPages) {
+      return NextResponse.json({ pages: [] });
     }
 
-    if (!pages || pages.length <= 1) {
-      const { data } = await supabase
-        .from("manual_paginas")
-        .select(
-          "numero_pagina, capitulo_tema, subtitulo_pagina, possui_fluxograma, possui_receita_modelo"
+    const targetStem = normalizeStem(capitulo);
+
+    let chapterPages = targetStem
+      ? allManualPages.filter(
+          (p) => normalizeStem(p.capitulo_tema || "") === targetStem
         )
-        .eq("manual_id", manualId)
-        .gte("numero_pagina", Math.max(1, currentPage - 3))
-        .lte("numero_pagina", currentPage + 5)
-        .order("numero_pagina", { ascending: true });
-      pages = data || [];
+      : [];
+
+    if (chapterPages.length === 0) {
+      chapterPages = allManualPages.filter(
+        (p) =>
+          p.numero_pagina >= Math.max(1, currentPage - 2) &&
+          p.numero_pagina <= currentPage + 3
+      );
     }
 
-    return NextResponse.json({ pages });
+    return NextResponse.json({ pages: chapterPages.slice(0, 25) });
   } catch (err) {
     console.error("[manual-chapter] Erro:", err);
     return NextResponse.json({ pages: [] });

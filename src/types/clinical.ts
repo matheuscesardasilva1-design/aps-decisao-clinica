@@ -34,6 +34,8 @@ export interface SearchResultItem {
   possui_receita_modelo: boolean;
   texto_receita_verbatim: string | null;
   texto_indexacao: string | null;
+  chapter_page_count?: number;
+  chapter_page_range?: string;
 
   // Campos de TelessaúdeRS
   url_original: string | null;
