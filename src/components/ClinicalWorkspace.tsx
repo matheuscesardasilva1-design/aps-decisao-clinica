@@ -35,10 +35,12 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { ManualPageViewer } from "@/components/ManualPageViewer";
 import { TelessaudeViewer } from "@/components/TelessaudeViewer";
 import { SynthesisPanel } from "@/components/SynthesisPanel";
+import { inferMedicalSpecialty } from "@/lib/topic-grouping";
 import { cn } from "@/lib/utils";
 
 interface ClinicalWorkspaceProps {
   userEmail?: string | null;
+  initialResults?: SearchResultItem[];
 }
 
 const NAV_AREAS: {
@@ -92,20 +94,24 @@ const NAV_AREAS: {
   },
 ];
 
-export function ClinicalWorkspace({ userEmail }: ClinicalWorkspaceProps) {
+export function ClinicalWorkspace({
+  userEmail,
+  initialResults = [],
+}: ClinicalWorkspaceProps) {
   const router = useRouter();
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const didInitialMount = React.useRef(false);
 
   const [query, setQuery] = React.useState("");
   const [activeArea, setActiveArea] = React.useState<FilterPillKey>("todos");
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
-  const [results, setResults] = React.useState<SearchResultItem[]>([]);
+  const [results, setResults] = React.useState<SearchResultItem[]>(initialResults);
   const [selectedItem, setSelectedItem] = React.useState<SearchResultItem | null>(
     null
   );
 
-  const [loading, setLoading] = React.useState(true);
+  const [loading, setLoading] = React.useState(initialResults.length === 0);
   const [error, setError] = React.useState<string | null>(null);
 
   const [synthesizing, setSynthesizing] = React.useState(false);
@@ -128,8 +134,14 @@ export function ClinicalWorkspace({ userEmail }: ClinicalWorkspaceProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Busca híbrida
+  // Busca híbrida (pula o primeiro fetch se já veio pré-carregado via SSR)
   React.useEffect(() => {
+    if (!didInitialMount.current) {
+      didInitialMount.current = true;
+      if (initialResults.length > 0 && activeArea === "todos" && !query.trim()) {
+        return;
+      }
+    }
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setLoading(true);
@@ -242,6 +254,22 @@ export function ClinicalWorkspace({ userEmail }: ClinicalWorkspaceProps) {
     () => results.filter((r) => r.tipo_fonte === "telessaude"),
     [results]
   );
+
+  // Agrupa resultados por Especialidade Médica quando estiver em uma área específica
+  const groupedBySpecialty = React.useMemo(() => {
+    const map = new Map<string, SearchResultItem[]>();
+    for (const item of results) {
+      const spec = inferMedicalSpecialty(
+        item.titulo,
+        item.subtitulo,
+        item.especialidade
+      );
+      const list = map.get(spec) || [];
+      list.push(item);
+      map.set(spec, list);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], "pt-BR"));
+  }, [results]);
 
   const currentNav =
     NAV_AREAS.find((a) => a.key === activeArea) || NAV_AREAS[0];
@@ -697,43 +725,57 @@ export function ClinicalWorkspace({ userEmail }: ClinicalWorkspaceProps) {
                       )}
                     </div>
                   ) : (
-                    <div className="overflow-hidden rounded-2xl bg-[var(--surface-card)] ring-1 ring-black/[0.07] dark:ring-white/[0.08] divide-y divide-black/[0.05] dark:divide-white/[0.06]">
-                      {results.map((item) => (
-                        <button
-                          key={`${item.tipo_fonte}-${item.id}`}
-                          type="button"
-                          onClick={() => setSelectedItem(item)}
-                          className="group flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left hover:bg-slate-50/80 dark:hover:bg-white/[0.03] transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              {item.is_new && (
-                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
-                              )}
-                              <span className="truncate text-sm font-medium text-slate-900 dark:text-slate-100 group-hover:text-teal-700 dark:group-hover:text-teal-300">
-                                {item.titulo}
-                              </span>
-                            </div>
-                            <span className="mt-0.5 block truncate text-[11px] text-slate-400">
-                              {item.fonte_label}
+                    <div className="space-y-6">
+                      {groupedBySpecialty.map(([specialty, specItems]) => (
+                        <div key={specialty} className="space-y-2">
+                          <div className="flex items-center justify-between px-1">
+                            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                              {specialty}
+                            </h3>
+                            <span className="font-mono text-[11px] text-slate-400">
+                              {specItems.length}
                             </span>
                           </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            {item.possui_fluxograma && (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-black/[0.035] dark:bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                                <GitBranch className="h-3 w-3 text-indigo-500" />
-                                <span className="hidden sm:inline">Fluxo</span>
-                              </span>
-                            )}
-                            {item.possui_receita_modelo && (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                                <ClipboardList className="h-3 w-3" />
-                                <span className="hidden sm:inline">Receita</span>
-                              </span>
-                            )}
-                            <ChevronRight className="h-4 w-4 text-slate-300 dark:text-slate-600 group-hover:text-teal-600" />
+                          <div className="overflow-hidden rounded-2xl bg-[var(--surface-card)] ring-1 ring-black/[0.07] dark:ring-white/[0.08] divide-y divide-black/[0.05] dark:divide-white/[0.06]">
+                            {specItems.map((item) => (
+                              <button
+                                key={`${item.tipo_fonte}-${item.id}`}
+                                type="button"
+                                onClick={() => setSelectedItem(item)}
+                                className="group flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left hover:bg-slate-50/80 dark:hover:bg-white/[0.03] transition-colors"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    {item.is_new && (
+                                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
+                                    )}
+                                    <span className="truncate text-sm font-medium text-slate-900 dark:text-slate-100 group-hover:text-teal-700 dark:group-hover:text-teal-300">
+                                      {item.titulo}
+                                    </span>
+                                  </div>
+                                  <span className="mt-0.5 block truncate text-[11px] text-slate-400">
+                                    {item.fonte_label}
+                                  </span>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                  {item.possui_fluxograma && (
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-black/[0.035] dark:bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                                      <GitBranch className="h-3 w-3 text-indigo-500" />
+                                      <span className="hidden sm:inline">Fluxo</span>
+                                    </span>
+                                  )}
+                                  {item.possui_receita_modelo && (
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                                      <ClipboardList className="h-3 w-3" />
+                                      <span className="hidden sm:inline">Receita</span>
+                                    </span>
+                                  )}
+                                  <ChevronRight className="h-4 w-4 text-slate-300 dark:text-slate-600 group-hover:text-teal-600" />
+                                </div>
+                              </button>
+                            ))}
                           </div>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   )}

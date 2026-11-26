@@ -166,3 +166,132 @@ export function getCleanTopicDisplayTitle(capitulo: string): string {
   }
   return capitulo.trim();
 }
+
+export function inferMedicalSpecialty(
+  titulo: string,
+  subtitulo?: string | null,
+  explicitEspecialidade?: string | null
+): string {
+  if (explicitEspecialidade && explicitEspecialidade.trim() && explicitEspecialidade !== "Atenção Primária") {
+    return explicitEspecialidade.trim();
+  }
+
+  const text = stripAccents(`${titulo} ${subtitulo || ""}`);
+
+  if (/diabetes|dm2|pe diabetico|tireoid|hipotireoid|hipertireoid|osteoporos|osteopen|obesidad|vitamina d|dislipid|endocrin/.test(text)) {
+    return "Endocrinologia & Metabólicas";
+  }
+  if (/hipertens|cardio|insuficiencia cardiaca|fibrilac|arritmia|dor toracica|angina|avc|variz|trombos|vascular/.test(text)) {
+    return "Cardiologia & Vascular";
+  }
+  if (/asma|dpoc|pulmon|dispneia|tosse|pneumon|tuberculos|rinite|sinusit|respirat/.test(text)) {
+    return "Pneumologia & Respiratórias";
+  }
+  if (/rastreamento|cancer|vacin|imuniz|pni|prevenc/.test(text)) {
+    return "Prevenção & Rastreamento";
+  }
+  if (/pre-natal|gestant|obstetric|gineco|climat|menopaus|anticoncep|contracep|vulvovag|mama|utero|hpv/.test(text)) {
+    return "Saúde da Mulher & Obstetrícia";
+  }
+  if (/crianc|puericult|pediatr|lactent|aleitament|crescimento|desenvolvimento infantil/.test(text)) {
+    return "Saúde da Criança & Puericultura";
+  }
+  if (/hemorroid|urol|prostat|itu|urinari|renal|nefrol|calculo|incontinencia|proctolog/.test(text)) {
+    return "Urologia & Proctologia";
+  }
+  if (/gastro|refluxo|drge|dispeps|ulcera|diarreia|constipac|hepat|cirros|esteatos|intestin/.test(text)) {
+    return "Gastroenterologia";
+  }
+  if (/depress|ansiedad|insonia|cefaleia|enxaquec|epileps|demenc|parkinson|alzheimer|psiquiat|neurol|tabagism|alcool/.test(text)) {
+    return "Saúde Mental & Neurologia";
+  }
+  if (/dermat|eczema|psorias|acne|micose|escabios|urticaria|pele|ferida/.test(text)) {
+    return "Dermatologia";
+  }
+  if (/lombalg|artrose|artrit|gota|fibromialg|ombro|joelho|ortoped|reumat/.test(text)) {
+    return "Ortopedia & Reumatologia";
+  }
+  if (/otite|vertigem|tontura|faringit|amigdal|conjuntiv|olho|otorrino|oftalm/.test(text)) {
+    return "Otorrino & Oftalmologia";
+  }
+  if (/dengue|hiv|sifilis|ist|infecc|antibiotic|herpes|celulit|erisipela/.test(text)) {
+    return "Infectologia";
+  }
+
+  return "Clínica Geral / APS";
+}
+
+import type { SearchResultItem } from "@/types/clinical";
+
+export function groupManualTopics(rawResults: SearchResultItem[]): SearchResultItem[] {
+  const grouped: SearchResultItem[] = [];
+  const topicIndexMap = new Map<
+    string,
+    {
+      index: number;
+      pages: Set<number>;
+      keywords: Set<string>;
+      subtitles: Set<string>;
+    }
+  >();
+
+  for (const item of rawResults) {
+    if (item.tipo_fonte !== "manual_pagina" || !item.manual_id) {
+      grouped.push(item);
+      continue;
+    }
+
+    if (isNonClinicalFrontMatter(item.titulo, item.subtitulo)) {
+      continue;
+    }
+
+    const key = getClinicalTopicKey(item.manual_id, item.titulo || "");
+    const existing = topicIndexMap.get(key);
+
+    if (!existing) {
+      const pages = new Set<number>();
+      if (item.numero_pagina) pages.add(item.numero_pagina);
+
+      const keywords = new Set<string>(item.palavras_chave || []);
+      const subtitles = new Set<string>();
+      if (item.subtitulo) subtitles.add(item.subtitulo);
+
+      const cleanTitle = getCleanTopicDisplayTitle(item.titulo || "");
+      const idx = grouped.length;
+      grouped.push({
+        ...item,
+        titulo: cleanTitle,
+        chapter_page_count: pages.size,
+        chapter_page_range: item.numero_pagina ? `Pág. ${item.numero_pagina}` : "",
+        fonte_label: `${item.categoria} • ${item.numero_pagina ? `Pág. ${item.numero_pagina}` : ""}`,
+      });
+      topicIndexMap.set(key, { index: idx, pages, keywords, subtitles });
+    } else {
+      const target = grouped[existing.index];
+      if (item.numero_pagina) existing.pages.add(item.numero_pagina);
+      (item.palavras_chave || []).forEach((k) => existing.keywords.add(k));
+      if (item.subtitulo) existing.subtitles.add(item.subtitulo);
+
+      target.possui_fluxograma = target.possui_fluxograma || item.possui_fluxograma;
+      target.possui_receita_modelo =
+        target.possui_receita_modelo || item.possui_receita_modelo;
+      if (!target.texto_receita_verbatim && item.texto_receita_verbatim) {
+        target.texto_receita_verbatim = item.texto_receita_verbatim;
+      }
+      target.palavras_chave = Array.from(existing.keywords).slice(0, 12);
+
+      const sortedPages = Array.from(existing.pages).sort((a, b) => a - b);
+      const minP = sortedPages[0];
+      const maxP = sortedPages[sortedPages.length - 1];
+      const range =
+        sortedPages.length > 1 ? `Págs. ${minP}–${maxP}` : `Pág. ${minP}`;
+
+      target.chapter_page_count = sortedPages.length;
+      target.chapter_page_range = range;
+      target.fonte_label = `${target.categoria} • ${range}`;
+      target.subtitulo = Array.from(existing.subtitles).slice(0, 2).join(" • ");
+    }
+  }
+
+  return grouped;
+}
