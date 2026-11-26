@@ -1,18 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-
-function normalizeStem(text: string): string {
-  const clean = text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\([^)]*\)/g, "")
-    .replace(/[^a-z0-9\s]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-  const words = clean.split(" ").filter((w) => w.length > 2);
-  return words.slice(0, 2).join(" ") || clean;
-}
+import {
+  getClinicalTopicKey,
+  isNonClinicalFrontMatter,
+} from "@/lib/topic-grouping";
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,19 +37,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ pages: [] });
     }
 
-    const targetStem = normalizeStem(capitulo);
+    const targetKey = getClinicalTopicKey(manualId, capitulo);
 
-    let chapterPages = targetStem
-      ? allManualPages.filter(
-          (p) => normalizeStem(p.capitulo_tema || "") === targetStem
-        )
-      : [];
+    let chapterPages = allManualPages.filter(
+      (p) =>
+        !isNonClinicalFrontMatter(p.capitulo_tema, p.subtitulo_pagina) &&
+        getClinicalTopicKey(manualId, p.capitulo_tema || "") === targetKey
+    );
 
     if (chapterPages.length === 0) {
       chapterPages = allManualPages.filter(
-        (p) =>
-          p.numero_pagina >= Math.max(1, currentPage - 2) &&
-          p.numero_pagina <= currentPage + 3
+        (p) => p.numero_pagina === currentPage
       );
     }
 

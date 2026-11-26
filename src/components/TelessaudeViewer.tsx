@@ -13,6 +13,8 @@ import {
   Loader2,
   BookMarked,
   Table2,
+  Copy,
+  Check,
 } from "lucide-react";
 import type { SearchResultItem } from "@/types/clinical";
 import { formatDateBR } from "@/lib/utils";
@@ -25,10 +27,39 @@ interface TelessaudeViewerProps {
 export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) {
   const [marking, setMarking] = React.useState(false);
   const [showRefs, setShowRefs] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
 
   React.useEffect(() => {
     setShowRefs(false);
+    setCopied(false);
   }, [item.id]);
+
+  const handleCopySummary = async () => {
+    const parts = [
+      item.titulo,
+      item.resposta_direta ? `Resposta Direta: ${item.resposta_direta}` : "",
+      item.conduta_direta?.length ? `Conduta:\n- ${item.conduta_direta.join("\n- ")}` : "",
+      item.prescricao_exames?.length
+        ? `Prescrição/Exames:\n- ${item.prescricao_exames.join("\n- ")}`
+        : "",
+      item.quando_encaminhar?.length
+        ? `Encaminhamento:\n- ${item.quando_encaminhar.join("\n- ")}`
+        : "",
+    ].filter(Boolean);
+    const text = parts.join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleMarkRead = async () => {
     setMarking(true);
@@ -76,6 +107,23 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopySummary}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0B1120] px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-[#0284C7] transition-colors"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-600" />
+                  Copiado!
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copiar Conduta
+                </>
+              )}
+            </button>
             {item.is_new && (
               <button
                 type="button"

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { embedClinicalText } from "@/lib/gemini";
+import {
+  getCleanTopicDisplayTitle,
+  getClinicalTopicKey,
+  isNonClinicalFrontMatter,
+} from "@/lib/topic-grouping";
 import type { FilterPillKey, SearchResultItem } from "@/types/clinical";
 
 const ALLOWED_FILTERS: FilterPillKey[] = [
@@ -11,23 +16,6 @@ const ALLOWED_FILTERS: FilterPillKey[] = [
   "novidades",
   "receita",
 ];
-
-function normalizeTopicKey(manualId: string, titulo: string): string {
-  const clean = titulo
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\([^)]*\)/g, "")
-    .replace(/[^a-z0-9\s]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-
-  // Usa os 3 primeiros termos significativos para agrupar variações como
-  // "Diabetes Mellitus Tipo 2" e "Diabetes Mellitus" no mesmo card clínico
-  const words = clean.split(" ").filter((w) => w.length > 2);
-  const stem = words.slice(0, 2).join(" ") || clean || "geral";
-  return `${manualId}::${stem}`;
-}
 
 function groupManualTopics(rawResults: SearchResultItem[]): SearchResultItem[] {
   const grouped: SearchResultItem[] = [];
@@ -47,7 +35,12 @@ function groupManualTopics(rawResults: SearchResultItem[]): SearchResultItem[] {
       continue;
     }
 
-    const key = normalizeTopicKey(item.manual_id, item.titulo || "");
+    // Remove capas, sumários, aviso ético e referências da lista clínica
+    if (isNonClinicalFrontMatter(item.titulo, item.subtitulo)) {
+      continue;
+    }
+
+    const key = getClinicalTopicKey(item.manual_id, item.titulo || "");
     const existing = topicIndexMap.get(key);
 
     if (!existing) {
@@ -58,11 +51,14 @@ function groupManualTopics(rawResults: SearchResultItem[]): SearchResultItem[] {
       const subtitles = new Set<string>();
       if (item.subtitulo) subtitles.add(item.subtitulo);
 
+      const cleanTitle = getCleanTopicDisplayTitle(item.titulo || "");
       const idx = grouped.length;
       grouped.push({
         ...item,
+        titulo: cleanTitle,
         chapter_page_count: pages.size,
         chapter_page_range: item.numero_pagina ? `Pág. ${item.numero_pagina}` : "",
+        fonte_label: `${item.categoria} • ${item.numero_pagina ? `Pág. ${item.numero_pagina}` : ""}`,
       });
       topicIndexMap.set(key, { index: idx, pages, keywords, subtitles });
     } else {
@@ -87,8 +83,8 @@ function groupManualTopics(rawResults: SearchResultItem[]): SearchResultItem[] {
 
       target.chapter_page_count = sortedPages.length;
       target.chapter_page_range = range;
-      target.fonte_label = `${target.manual_titulo || "Manual"} ${target.manual_versao || ""} • ${range}`;
-      target.subtitulo = Array.from(existing.subtitles).slice(0, 3).join(" • ");
+      target.fonte_label = `${target.categoria} • ${range}`;
+      target.subtitulo = Array.from(existing.subtitles).slice(0, 2).join(" • ");
     }
   }
 
@@ -135,7 +131,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Busca até 50 páginas para agrupar por tema/capítulo clínico sem perder cobertura
     const { data, error } = await supabase.rpc("buscar_conhecimento_clinico_v2", {
       query_text: queryText,
       query_embedding: queryEmbedding,
