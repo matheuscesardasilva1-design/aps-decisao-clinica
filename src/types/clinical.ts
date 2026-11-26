@@ -1,6 +1,7 @@
 export type ManualCategoria =
   | "Adulto APS"
   | "Obstetrícia / Pré-Natal"
+  | "Saúde da Criança / Puericultura"
   | "REMUME"
   | "Protocolos";
 
@@ -8,6 +9,7 @@ export type FilterPillKey =
   | "todos"
   | "Adulto APS"
   | "Obstetrícia / Pré-Natal"
+  | "Saúde da Criança / Puericultura"
   | "TelessaúdeRS"
   | "novidades"
   | "receita";

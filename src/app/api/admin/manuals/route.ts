@@ -5,6 +5,7 @@ import type { ManualCategoria } from "@/types/clinical";
 const VALID_CATEGORIES: ManualCategoria[] = [
   "Adulto APS",
   "Obstetrícia / Pré-Natal",
+  "Saúde da Criança / Puericultura",
   "REMUME",
   "Protocolos",
 ];

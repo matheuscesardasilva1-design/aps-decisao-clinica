@@ -26,6 +26,7 @@ import { formatDateTimeBR, sleep } from "@/lib/utils";
 const CATEGORIES: ManualCategoria[] = [
   "Adulto APS",
   "Obstetrícia / Pré-Natal",
+  "Saúde da Criança / Puericultura",
   "REMUME",
   "Protocolos",
 ];

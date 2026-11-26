@@ -12,6 +12,7 @@ const ALLOWED_FILTERS: FilterPillKey[] = [
   "todos",
   "Adulto APS",
   "Obstetrícia / Pré-Natal",
+  "Saúde da Criança / Puericultura",
   "TelessaúdeRS",
   "novidades",
   "receita",

@@ -47,6 +47,7 @@ load_dotenv(".env.local")
 VALID_CATEGORIES = [
     "Adulto APS",
     "Obstetrícia / Pré-Natal",
+    "Saúde da Criança / Puericultura",
     "REMUME",
     "Protocolos",
 ]

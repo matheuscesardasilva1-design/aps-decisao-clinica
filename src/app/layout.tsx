@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { Inter, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
+import { IBM_Plex_Sans, Plus_Jakarta_Sans, IBM_Plex_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
 
-const inter = Inter({
+const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
   variable: "--font-inter",
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -16,7 +17,7 @@ const jakarta = Plus_Jakarta_Sans({
   display: "swap",
 });
 
-const jetbrains = JetBrains_Mono({
+const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
   weight: ["400", "500"],
@@ -26,7 +27,7 @@ const jetbrains = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "APS Clínica — Apoio Rápido à Decisão Clínica",
   description:
-    "Consulta clínica rápida na Atenção Primária à Saúde: protocolos originais, fluxogramas em alta nitidez, receitas prontas e TelessaúdeRS-UFRGS.",
+    "Sistema privado de apoio à decisão clínica na Atenção Primária à Saúde: Adulto, Saúde da Mulher, Saúde da Criança, fluxogramas originais e TelessaúdeRS-UFRGS.",
   robots: {
     index: false,
     follow: false,
@@ -42,7 +43,7 @@ export default function RootLayout({
     <html
       lang="pt-BR"
       suppressHydrationWarning
-      className={`${inter.variable} ${jakarta.variable} ${jetbrains.variable}`}
+      className={`${plexSans.variable} ${jakarta.variable} ${plexMono.variable}`}
     >
       <body className="min-h-screen font-sans antialiased">
         <ThemeProvider>{children}</ThemeProvider>
