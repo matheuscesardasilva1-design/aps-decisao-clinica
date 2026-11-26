@@ -19,6 +19,13 @@ const JUNK_PATTERNS = [
   "demandas espontaneas",
   "metabolicas e endocrinologicas",
   "doencas respiratorias",
+  "cardiologicas e vasculares",
+  "doencas cardiovasculares",
+  "gastrointestinais",
+  "neurologicas e psiquiatricas",
+  "musculoesqueleticas",
+  "urologicas e renais",
+  "dermatologicas",
 ];
 
 const STOP_WORDS = new Set([
@@ -118,6 +125,12 @@ export function getClinicalTopicKey(manualId: string, capitulo: string): string 
   if (clean.includes("osteoporose") || clean.includes("osteopenia")) {
     return `${manualId}::osteoporose`;
   }
+  if (clean.includes("dpoc") || clean.includes("pulmonar obstrutiva")) {
+    return `${manualId}::dpoc`;
+  }
+  if (clean.includes("asma")) {
+    return `${manualId}::asma`;
+  }
 
   const significant = clean
     .split(" ")
@@ -144,6 +157,12 @@ export function getCleanTopicDisplayTitle(capitulo: string): string {
   }
   if (clean.includes("osteoporose") || clean.includes("osteopenia")) {
     return "Osteopenia e Osteoporose";
+  }
+  if (clean.includes("dpoc") || clean.includes("pulmonar obstrutiva")) {
+    return "DPOC (Doença Pulmonar Obstrutiva Crônica)";
+  }
+  if (clean.includes("asma")) {
+    return "Asma na APS";
   }
   return capitulo.trim();
 }

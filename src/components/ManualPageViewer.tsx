@@ -241,13 +241,13 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
   return (
     <div className="h-full space-y-4 overflow-y-auto pr-1 pb-10">
       {/* Cabeçalho Limpo + Atalhos de Seção (Rolagem Contínua, Sem Folhear) */}
-      <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="rounded-2xl bg-[var(--surface-card)] ring-1 ring-black/[0.07] dark:ring-white/[0.08] p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
               {item.manual_titulo} {item.manual_versao} • {pageRange}
             </p>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight text-[#0F172A] dark:text-[#F1F5F9]">
+            <h2 className="mt-1 font-display text-xl sm:text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50">
               {item.titulo}
             </h2>
           </div>

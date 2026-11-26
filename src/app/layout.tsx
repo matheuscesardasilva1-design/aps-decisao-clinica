@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
 
@@ -9,10 +9,24 @@ const inter = Inter({
   display: "swap",
 });
 
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-jakarta",
+  weight: ["500", "600", "700"],
+  display: "swap",
+});
+
+const jetbrains = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["400", "500"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "APS Decisão Clínica — Apoio Rápido em Consultório",
+  title: "APS Clínica — Apoio Rápido à Decisão Clínica",
   description:
-    "Plataforma privada de apoio rápido à decisão clínica na Atenção Primária à Saúde (APS): manuais originais com fluxogramas em alta nitidez e TelessaúdeRS-UFRGS.",
+    "Consulta clínica rápida na Atenção Primária à Saúde: protocolos originais, fluxogramas em alta nitidez, receitas prontas e TelessaúdeRS-UFRGS.",
   robots: {
     index: false,
     follow: false,
@@ -25,8 +39,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning className={inter.variable}>
-      <body className="min-h-screen font-sans antialiased selection:bg-sky-200 selection:text-slate-900 dark:selection:bg-sky-800 dark:selection:text-slate-100">
+    <html
+      lang="pt-BR"
+      suppressHydrationWarning
+      className={`${inter.variable} ${jakarta.variable} ${jetbrains.variable}`}
+    >
+      <body className="min-h-screen font-sans antialiased">
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

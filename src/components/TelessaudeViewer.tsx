@@ -81,7 +81,7 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
   return (
     <div className="h-full space-y-4 overflow-y-auto pr-1 pb-8">
       {/* Cabeçalho + Resposta Direta */}
-      <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-5 shadow-sm">
+      <div className="rounded-2xl bg-[var(--surface-card)] ring-1 ring-black/[0.07] dark:ring-white/[0.08] p-5 sm:p-6">
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-md bg-teal-100 dark:bg-teal-900/50 px-2.5 py-0.5 text-xs font-semibold text-[#0D9488] dark:text-teal-300">
@@ -153,7 +153,7 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
           </div>
         </div>
 
-        <h2 className="text-lg font-semibold leading-snug text-[#0F172A] dark:text-[#F1F5F9]">
+        <h2 className="font-display text-xl sm:text-2xl font-semibold leading-snug tracking-tight text-slate-900 dark:text-slate-50">
           {item.titulo}
         </h2>
 

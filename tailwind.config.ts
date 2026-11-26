@@ -9,29 +9,19 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      colors: {
-        clinical: {
-          bg: "#F8FAFC",
-          surface: "#FFFFFF",
-          border: "#E2E8F0",
-          ink: "#0F172A",
-          accent: "#0284C7",
-          emerald: "#0D9488",
-          darkBg: "#0B1120",
-          darkSurface: "#1E293B",
-          darkBorder: "#334155",
-          darkInk: "#F1F5F9",
-        },
-      },
       fontFamily: {
-        sans: [
+        sans: ["var(--font-inter)", "system-ui", "-apple-system", "sans-serif"],
+        display: [
+          "var(--font-jakarta)",
           "var(--font-inter)",
           "system-ui",
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "Segoe UI",
-          "Roboto",
           "sans-serif",
+        ],
+        mono: [
+          "var(--font-mono)",
+          "ui-monospace",
+          "SFMono-Regular",
+          "monospace",
         ],
       },
     },

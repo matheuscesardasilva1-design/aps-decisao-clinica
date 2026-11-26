@@ -8,13 +8,12 @@ import {
   ShieldCheck,
   X,
   ArrowLeft,
-  BookOpen,
-  Baby,
-  Newspaper,
-  ClipboardList,
   GitBranch,
+  ClipboardList,
   ChevronRight,
   FileSearch,
+  BookOpen,
+  Newspaper,
 } from "lucide-react";
 import type {
   ClinicalSynthesis,
@@ -26,41 +25,21 @@ import { TelessaudeViewer } from "@/components/TelessaudeViewer";
 import { SynthesisPanel } from "@/components/SynthesisPanel";
 import { cn } from "@/lib/utils";
 
-const QUICK_CATEGORIES: {
-  key: FilterPillKey;
-  label: string;
-  desc: string;
-  icon: React.ElementType;
-  color: string;
-}[] = [
-  {
-    key: "Adulto APS",
-    label: "Adulto APS",
-    desc: "Crônicas, fluxogramas e condutas",
-    icon: BookOpen,
-    color: "text-[#0284C7] bg-sky-50 dark:bg-sky-950/60 dark:text-sky-400",
-  },
-  {
-    key: "Obstetrícia / Pré-Natal",
-    label: "Saúde da Mulher",
-    desc: "Pré-natal, gineco e puericultura",
-    icon: Baby,
-    color: "text-pink-600 bg-pink-50 dark:bg-pink-950/50 dark:text-pink-400",
-  },
-  {
-    key: "TelessaúdeRS",
-    label: "TelessaúdeRS",
-    desc: "Perguntas da Semana atualizadas",
-    icon: Newspaper,
-    color: "text-[#0D9488] bg-teal-50 dark:bg-teal-950/60 dark:text-teal-400",
-  },
-  {
-    key: "receita",
-    label: "Receitas Modelo",
-    desc: "Prescrições prontas para copiar",
-    icon: ClipboardList,
-    color: "text-amber-600 bg-amber-50 dark:bg-amber-950/50 dark:text-amber-400",
-  },
+const FILTER_TABS: { key: FilterPillKey; label: string }[] = [
+  { key: "todos", label: "Todos" },
+  { key: "Adulto APS", label: "Adulto APS" },
+  { key: "Obstetrícia / Pré-Natal", label: "Saúde da Mulher" },
+  { key: "TelessaúdeRS", label: "TelessaúdeRS" },
+  { key: "receita", label: "Receitas" },
+];
+
+const QUICK_SUGGESTIONS = [
+  "Diabetes",
+  "Asma",
+  "DPOC",
+  "Hipotireoidismo",
+  "Osteoporose",
+  "Vitamina D",
 ];
 
 export function ClinicalWorkspace() {
@@ -81,7 +60,7 @@ export function ClinicalWorkspace() {
   const [synthesis, setSynthesis] = React.useState<ClinicalSynthesis | null>(null);
   const [synthesisError, setSynthesisError] = React.useState<string | null>(null);
 
-  // Atalho global Ctrl+K / Cmd+K e ESC para voltar
+  // Atalho global Ctrl+K / Cmd+K
   React.useEffect(() => {
     inputRef.current?.focus();
 
@@ -99,7 +78,7 @@ export function ClinicalWorkspace() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Busca híbrida com debounce
+  // Busca híbrida
   React.useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -116,7 +95,7 @@ export function ClinicalWorkspace() {
             query,
             filter,
             includeArchived: false,
-            limit: 24,
+            limit: 25,
           }),
           signal: controller.signal,
         });
@@ -139,7 +118,7 @@ export function ClinicalWorkspace() {
       } finally {
         setLoading(false);
       }
-    }, query.trim() ? 240 : 0);
+    }, query.trim() ? 220 : 0);
 
     return () => {
       clearTimeout(timer);
@@ -192,31 +171,37 @@ export function ClinicalWorkspace() {
   };
 
   // ===========================================================================
-  // MODO LEITURA FOCADA (quando um protocolo ou pergunta está aberto)
+  // MODO LEITURA FOCADA
   // ===========================================================================
   if (selectedItem) {
     return (
-      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-5 sm:px-6">
+      <main className="animate-fade-in mx-auto flex w-full max-w-4xl flex-1 flex-col gap-5 px-4 py-6 sm:px-6">
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={() => setSelectedItem(null)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-[#0284C7] hover:text-[#0284C7] transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 ring-1 ring-black/[0.08] dark:ring-white/[0.1] hover:ring-sky-500/50 hover:text-sky-700 dark:hover:text-sky-300 transition-all"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Voltar à busca
+            Voltar
           </button>
 
           <button
             type="button"
             onClick={() => {
               setSelectedItem(null);
-              setTimeout(() => inputRef.current?.focus(), 20);
+              setTimeout(() => {
+                inputRef.current?.focus();
+                inputRef.current?.select();
+              }, 20);
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 transition-colors"
           >
             <Search className="h-3.5 w-3.5" />
-            Nova busca (⌘K)
+            <span>Nova consulta</span>
+            <kbd className="rounded bg-black/[0.05] dark:bg-white/[0.08] px-1.5 py-0.5 font-mono text-[10px]">
+              ⌘K
+            </kbd>
           </button>
         </div>
 
@@ -235,29 +220,33 @@ export function ClinicalWorkspace() {
   }
 
   // ===========================================================================
-  // MODO INÍCIO / BUSCA SPOTLIGHT (limpo, espaçoso, estilo app clínico moderno)
+  // TELA INICIAL — ESTILO EDITORIAL / COMMAND PALETTE (IMPECCABLE CRAFT)
   // ===========================================================================
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 sm:px-6 sm:py-10">
-      {/* Hero + Barra de Busca Central */}
-      <section className="mx-auto flex w-full max-w-2xl flex-col items-center text-center">
-        <h1 className="text-2xl font-semibold tracking-tight text-[#0F172A] dark:text-[#F1F5F9] sm:text-3xl">
-          O que você precisa consultar agora?
-        </h1>
-        <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-          Protocolos da APS, fluxogramas originais e TelessaúdeRS-UFRGS em um só lugar.
-        </p>
+    <main className="animate-fade-in mx-auto flex w-full max-w-3xl flex-1 flex-col gap-7 px-4 py-10 sm:px-6 sm:py-14">
+      {/* Cabeçalho Editorial */}
+      <section className="space-y-4">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-teal-700 dark:text-teal-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
+            Base Privada • Atenção Primária à Saúde
+          </div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-[28px]">
+            Consulta Rápida em Consultório
+          </h1>
+        </div>
 
-        <div className="mt-5 flex w-full items-center gap-2">
+        {/* Barra de Busca Elevada */}
+        <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" />
             <input
               ref={inputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ex: diabetes, hipotireoidismo, asma, vitamina D, tosse crônica..."
-              className="w-full rounded-2xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] py-3.5 pl-11 pr-24 text-sm text-[#0F172A] dark:text-[#F1F5F9] placeholder:text-slate-400 shadow-sm focus:border-[#0284C7] focus:outline-none focus:ring-4 focus:ring-sky-500/10 transition-all"
+              placeholder="Buscar doença, sintoma, fármaco ou protocolo..."
+              className="w-full rounded-2xl bg-[var(--surface-card)] py-3.5 pl-11 pr-24 text-[15px] text-slate-900 dark:text-slate-50 placeholder:text-slate-400 ring-1 ring-black/[0.09] dark:ring-white/[0.1] shadow-[0_2px_12px_rgba(15,23,42,0.04)] dark:shadow-none focus:outline-none focus:ring-2 focus:ring-sky-600/70 dark:focus:ring-sky-400/70 transition-all"
             />
             <div className="absolute right-3.5 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
               {query && (
@@ -267,18 +256,19 @@ export function ClinicalWorkspace() {
                     setQuery("");
                     inputRef.current?.focus();
                   }}
-                  className="rounded-md p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  aria-label="Limpar busca"
+                  className="rounded-md p-1 text-slate-400 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
               <span
-                title="LGPD: Não digite nome, CPF ou CNS de pacientes."
-                className="cursor-help text-slate-400 hover:text-[#0D9488]"
+                title="LGPD: Não digite nome, CPF ou CNS de pacientes. Uso exclusivo para consulta clínica genérica."
+                className="cursor-help p-1 text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 transition-colors"
               >
                 <ShieldCheck className="h-4 w-4" />
               </span>
-              <kbd className="hidden sm:inline-flex items-center rounded-md border border-[#E2E8F0] dark:border-[#334155] bg-slate-50 dark:bg-[#0B1120] px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+              <kbd className="hidden sm:inline-flex items-center rounded-md bg-black/[0.04] dark:bg-white/[0.07] px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-500 dark:text-slate-400">
                 ⌘K
               </kbd>
             </div>
@@ -289,53 +279,39 @@ export function ClinicalWorkspace() {
               type="button"
               onClick={handleSynthesize}
               disabled={synthesizing}
-              className="inline-flex h-[50px] shrink-0 items-center gap-1.5 rounded-2xl bg-[#0284C7] px-4 text-xs font-semibold text-white shadow-sm hover:bg-sky-700 transition-colors disabled:opacity-50"
+              className="inline-flex h-[50px] shrink-0 items-center gap-1.5 rounded-2xl bg-slate-900 dark:bg-sky-500 px-4 text-xs font-semibold text-white dark:text-slate-950 shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {synthesizing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Sparkles className="h-4 w-4" />
               )}
-              <span className="hidden sm:inline">Resumir com IA</span>
+              <span className="hidden sm:inline">Resumir (IA)</span>
             </button>
           )}
         </div>
-      </section>
 
-      {/* Atalhos Visuais de Categorias (4 Cards Limpos) */}
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {QUICK_CATEGORIES.map((cat) => {
-          const Icon = cat.icon;
-          const active = filter === cat.key;
-          return (
-            <button
-              key={cat.key}
-              type="button"
-              onClick={() => setFilter(active ? "todos" : cat.key)}
-              className={cn(
-                "flex flex-col items-start rounded-2xl border p-4 text-left transition-all",
-                active
-                  ? "border-[#0284C7] bg-sky-50/50 dark:bg-sky-950/30 ring-2 ring-[#0284C7]/20"
-                  : "border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-sm"
-              )}
-            >
-              <div className={cn("mb-3 flex h-9 w-9 items-center justify-center rounded-xl", cat.color)}>
-                <Icon className="h-4 w-4" />
-              </div>
-              <span className="text-sm font-semibold text-[#0F172A] dark:text-[#F1F5F9]">
-                {cat.label}
-              </span>
-              <span className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                {cat.desc}
-              </span>
-            </button>
-          );
-        })}
+        {/* Sugestões Rápidas discretas (quando busca está vazia) */}
+        {!query.trim() && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <span className="text-[11px] text-slate-400 mr-1">Acesso rápido:</span>
+            {QUICK_SUGGESTIONS.map((term) => (
+              <button
+                key={term}
+                type="button"
+                onClick={() => setQuery(term)}
+                className="rounded-full bg-black/[0.035] dark:bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:bg-sky-500/10 hover:text-sky-700 dark:hover:text-sky-300 transition-colors"
+              >
+                {term}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Síntese Sob Demanda */}
       {synthesisError && (
-        <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-4 py-3 text-xs text-rose-700 dark:text-rose-300">
+        <div className="rounded-xl bg-rose-50 dark:bg-rose-950/40 px-4 py-3 text-xs text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/20">
           {synthesisError}
         </div>
       )}
@@ -347,102 +323,134 @@ export function ClinicalWorkspace() {
         />
       )}
 
-      {/* Grade Limpa de Temas Clínicos */}
+      {/* Barra Segmentada de Filtros + Lista Editorial Limpa */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            {query.trim()
-              ? `Resultados para "${query.trim()}"`
-              : filter === "todos"
-                ? "Protocolos e Condutas Disponíveis"
-                : `Filtrado por: ${filter}`}
-          </h2>
-          {filter !== "todos" && (
-            <button
-              type="button"
-              onClick={() => setFilter("todos")}
-              className="text-xs font-medium text-[#0284C7] hover:underline"
-            >
-              Ver todos
-            </button>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-xs text-slate-400">
-            <Loader2 className="h-4 w-4 animate-spin text-[#0284C7]" />
-            Carregando protocolos...
-          </div>
-        ) : error ? (
-          <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 p-4 text-xs text-rose-700 dark:text-rose-300">
-            {error}
-          </div>
-        ) : results.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[#E2E8F0] dark:border-[#334155] py-16 text-center">
-            <FileSearch className="h-7 w-7 text-slate-300 dark:text-slate-600" />
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-              Nenhum protocolo encontrado
-            </p>
-            <p className="text-xs text-slate-400">
-              Tente outro termo clínico ou limpe o filtro ativo.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-            {results.map((item) => {
-              const isManual = item.tipo_fonte === "manual_pagina";
+        <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
+          <div className="inline-flex items-center rounded-xl bg-black/[0.04] dark:bg-white/[0.05] p-1">
+            {FILTER_TABS.map((tab) => {
+              const active = filter === tab.key;
               return (
                 <button
-                  key={`${item.tipo_fonte}-${item.id}`}
+                  key={tab.key}
                   type="button"
-                  onClick={() => setSelectedItem(item)}
-                  className="group flex flex-col justify-between rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-4 text-left transition-all hover:border-[#0284C7]/60 hover:shadow-sm focus:outline-none"
+                  onClick={() => setFilter(tab.key)}
+                  className={cn(
+                    "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                    active
+                      ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                  )}
                 >
-                  <div>
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <span
-                        className={cn(
-                          "text-[11px] font-medium",
-                          isManual
-                            ? "text-[#0284C7] dark:text-sky-400"
-                            : "text-[#0D9488] dark:text-teal-400"
-                        )}
-                      >
-                        {item.categoria}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {item.is_new && (
-                          <span className="h-2 w-2 rounded-full bg-emerald-500" title="Novo" />
-                        )}
-                        {item.possui_fluxograma && (
-                          <GitBranch
-                            className="h-3.5 w-3.5 text-indigo-500"
-                            aria-label="Possui fluxograma"
-                          />
-                        )}
-                        {item.possui_receita_modelo && (
-                          <ClipboardList
-                            className="h-3.5 w-3.5 text-amber-500"
-                            aria-label="Possui receita modelo"
-                          />
-                        )}
-                      </div>
-                    </div>
-
-                    <h3 className="text-sm font-semibold leading-snug text-[#0F172A] dark:text-[#F1F5F9] group-hover:text-[#0284C7] dark:group-hover:text-sky-300 transition-colors line-clamp-2">
-                      {item.titulo}
-                    </h3>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                    <span className="truncate">{item.fonte_label}</span>
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-[#0284C7]" />
-                  </div>
+                  {tab.label}
                 </button>
               );
             })}
           </div>
-        )}
+
+          {!loading && (
+            <span className="hidden sm:inline text-[11px] font-mono text-slate-400">
+              {results.length} {results.length === 1 ? "tema" : "temas"}
+            </span>
+          )}
+        </div>
+
+        {/* Lista Editorial com Divisores Finos */}
+        <div className="overflow-hidden rounded-2xl bg-[var(--surface-card)] ring-1 ring-black/[0.07] dark:ring-white/[0.08] shadow-[0_1px_4px_rgba(15,23,42,0.03)] dark:shadow-none">
+          {loading ? (
+            <div className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <div key={n} className="flex items-center justify-between px-4 py-4">
+                  <div className="space-y-2 flex-1">
+                    <div className="h-3.5 w-2/5 animate-pulse rounded bg-slate-200/80 dark:bg-slate-700/60" />
+                    <div className="h-2.5 w-1/4 animate-pulse rounded bg-slate-100 dark:bg-slate-800" />
+                  </div>
+                  <div className="h-3 w-16 animate-pulse rounded bg-slate-100 dark:bg-slate-800" />
+                </div>
+              ))}
+            </div>
+          ) : error ? (
+            <div className="p-6 text-center text-xs text-rose-600 dark:text-rose-400">
+              {error}
+            </div>
+          ) : results.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+              <FileSearch className="h-6 w-6 text-slate-300 dark:text-slate-600" />
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                Nenhum protocolo encontrado
+              </p>
+              <p className="text-xs text-slate-400">
+                Tente buscar outro termo clínico ou volte para o filtro &ldquo;Todos&rdquo;.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-black/[0.05] dark:divide-white/[0.06]">
+              {results.map((item) => {
+                const isManual = item.tipo_fonte === "manual_pagina";
+                return (
+                  <button
+                    key={`${item.tipo_fonte}-${item.id}`}
+                    type="button"
+                    onClick={() => setSelectedItem(item)}
+                    className="group flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition-colors hover:bg-slate-50/90 dark:hover:bg-white/[0.03] focus:bg-slate-50 dark:focus:bg-white/[0.04] focus:outline-none"
+                  >
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <div
+                        className={cn(
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                          isManual
+                            ? "bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                            : "bg-teal-500/10 text-teal-700 dark:text-teal-400"
+                        )}
+                      >
+                        {isManual ? (
+                          <BookOpen className="h-4 w-4" />
+                        ) : (
+                          <Newspaper className="h-4 w-4" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-[14px] font-medium text-slate-900 dark:text-slate-100 group-hover:text-sky-700 dark:group-hover:text-sky-300 transition-colors">
+                            {item.titulo}
+                          </span>
+                          {item.is_new && (
+                            <span className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
+                          )}
+                        </div>
+                        <p className="mt-0.5 truncate text-[12px] text-slate-500 dark:text-slate-400">
+                          {item.fonte_label}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2.5">
+                      {item.possui_fluxograma && (
+                        <span
+                          title="Contém fluxograma original"
+                          className="inline-flex items-center gap-1 rounded-md bg-black/[0.035] dark:bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300"
+                        >
+                          <GitBranch className="h-3 w-3 text-indigo-500" />
+                          <span className="hidden sm:inline">Fluxo</span>
+                        </span>
+                      )}
+                      {item.possui_receita_modelo && (
+                        <span
+                          title="Contém modelo de receita"
+                          className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                        >
+                          <ClipboardList className="h-3 w-3" />
+                          <span className="hidden sm:inline">Receita</span>
+                        </span>
+                      )}
+                      <ChevronRight className="h-4 w-4 text-slate-300 dark:text-slate-600 group-hover:translate-x-0.5 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-all" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </section>
     </main>
   );
