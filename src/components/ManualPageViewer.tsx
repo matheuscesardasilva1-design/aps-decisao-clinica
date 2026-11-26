@@ -11,10 +11,9 @@ import {
   Loader2,
   GitBranch,
   ClipboardList,
-  BookOpen,
-  FileText,
   Sparkles,
   Pill,
+  FileText,
 } from "lucide-react";
 import type { SearchResultItem } from "@/types/clinical";
 import { cn } from "@/lib/utils";
@@ -32,8 +31,6 @@ interface ChapterPageFull {
   texto_indexacao: string;
 }
 
-type ViewerTab = "conduta" | "fluxogramas" | "paginas";
-
 interface ManualPageViewerProps {
   item: SearchResultItem;
 }
@@ -41,17 +38,14 @@ interface ManualPageViewerProps {
 export function ManualPageViewer({ item }: ManualPageViewerProps) {
   const [chapterPages, setChapterPages] = React.useState<ChapterPageFull[]>([]);
   const [loadingChapter, setLoadingChapter] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState<ViewerTab>("conduta");
+  const [onlyFlowcharts, setOnlyFlowcharts] = React.useState(false);
 
   const [signedUrls, setSignedUrls] = React.useState<Record<number, string>>({});
-  const [loadingImgs, setLoadingImgs] = React.useState(false);
-
   const [fullscreenImg, setFullscreenImg] = React.useState<{
     url: string;
     title: string;
   } | null>(null);
   const [fullscreenZoom, setFullscreenZoom] = React.useState(100);
-
   const [copiedKey, setCopiedKey] = React.useState<string | null>(null);
 
   // Gerador de Prescrição Pronta sob demanda
@@ -63,7 +57,7 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
   React.useEffect(() => {
     let active = true;
     setLoadingChapter(true);
-    setActiveTab("conduta");
+    setOnlyFlowcharts(false);
     setSignedUrls({});
     setGeneratedRx("");
     setRxError(null);
@@ -121,22 +115,21 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
     [pagesToUse]
   );
 
+  const visiblePages = onlyFlowcharts && flowchartPages.length > 0 ? flowchartPages : pagesToUse;
+
   const verbatimPrescriptions = React.useMemo(
     () => pagesToUse.filter((p) => p.texto_receita_verbatim),
     [pagesToUse]
   );
 
-  // Carrega Signed URLs em lote quando o médico abre a aba de Fluxogramas ou Páginas PDF
+  // Carrega Signed URLs em lote imediatamente para todas as páginas do tema (rolagem contínua)
   React.useEffect(() => {
-    if (activeTab === "conduta") return;
-    const targets = activeTab === "fluxogramas" ? flowchartPages : pagesToUse;
-    const missing = targets.filter(
+    const missing = visiblePages.filter(
       (p) => p.imagem_webp_path && !signedUrls[p.numero_pagina]
     );
     if (missing.length === 0) return;
 
     let active = true;
-    setLoadingImgs(true);
 
     Promise.all(
       missing.map(async (p) => {
@@ -159,13 +152,12 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
         }
         return next;
       });
-      setLoadingImgs(false);
     });
 
     return () => {
       active = false;
     };
-  }, [activeTab, flowchartPages, pagesToUse, signedUrls]);
+  }, [visiblePages, signedUrls]);
 
   // ESC fecha tela cheia
   React.useEffect(() => {
@@ -192,25 +184,23 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const fullProtocolText = React.useMemo(() => {
-    return pagesToUse
-      .map(
-        (p) =>
-          `${p.subtitulo_pagina || `Seção (Pág. ${p.numero_pagina})`}\n${p.texto_indexacao || ""}`
-      )
-      .join("\n\n");
-  }, [pagesToUse]);
-
   const handleGeneratePrescription = async () => {
     setGeneratingRx(true);
     setRxError(null);
     try {
+      const contexto = pagesToUse
+        .map(
+          (p) =>
+            `${p.subtitulo_pagina}\n${p.texto_indexacao}\n${p.texto_receita_verbatim || ""}`
+        )
+        .join("\n\n");
+
       const res = await fetch("/api/prescription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           titulo: item.titulo,
-          conteudo: fullProtocolText,
+          conteudo: contexto,
         }),
       });
       const data = (await res.json()) as { prescription?: string; error?: string };
@@ -225,6 +215,11 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
     }
   };
 
+  const scrollToSection = (pageNum: number) => {
+    const el = document.getElementById(`manual-sec-${pageNum}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const pageRange =
     pagesToUse.length > 1
       ? `Págs. ${pagesToUse[0].numero_pagina}–${pagesToUse[pagesToUse.length - 1].numero_pagina}`
@@ -232,7 +227,7 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
 
   return (
     <div className="h-full space-y-4 overflow-y-auto pr-1 pb-10">
-      {/* Cabeçalho Limpo + Abas (Sem Folhear Páginas) */}
+      {/* Cabeçalho Limpo + Atalhos de Seção (Rolagem Contínua, Sem Folhear) */}
       <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -245,6 +240,24 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {flowchartPages.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setOnlyFlowcharts((v) => !v)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                  onlyFlowcharts
+                    ? "border-indigo-500 bg-indigo-600 text-white"
+                    : "border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0B1120] text-slate-700 dark:text-slate-200 hover:border-indigo-400"
+                )}
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                {onlyFlowcharts
+                  ? `Mostrando só Fluxogramas (${flowchartPages.length})`
+                  : `Só Fluxogramas (${flowchartPages.length})`}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleGeneratePrescription}
@@ -258,73 +271,33 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
               )}
               Montar Prescrição Pronta
             </button>
-
-            <button
-              type="button"
-              onClick={() => copyText("all", `${item.titulo}\n\n${fullProtocolText}`)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0B1120] px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-[#0284C7] transition-colors"
-            >
-              {copiedKey === "all" ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-emerald-600" />
-                  Copiado!
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5" />
-                  Copiar Tudo
-                </>
-              )}
-            </button>
           </div>
         </div>
 
-        {/* Abas de Navegação do Tema */}
-        <div className="mt-4 flex items-center gap-1 border-b border-[#E2E8F0] dark:border-[#334155]">
-          <button
-            type="button"
-            onClick={() => setActiveTab("conduta")}
-            className={cn(
-              "inline-flex items-center gap-1.5 border-b-2 px-3.5 py-2 text-xs font-semibold transition-colors",
-              activeTab === "conduta"
-                ? "border-[#0284C7] text-[#0284C7] dark:text-sky-400"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-            )}
-          >
-            <BookOpen className="h-3.5 w-3.5" />
-            Conduta & Prescrição
-          </button>
-
-          {flowchartPages.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setActiveTab("fluxogramas")}
-              className={cn(
-                "inline-flex items-center gap-1.5 border-b-2 px-3.5 py-2 text-xs font-semibold transition-colors",
-                activeTab === "fluxogramas"
-                  ? "border-[#0284C7] text-[#0284C7] dark:text-sky-400"
-                  : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-              )}
-            >
-              <GitBranch className="h-3.5 w-3.5" />
-              Fluxogramas ({flowchartPages.length})
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("paginas")}
-            className={cn(
-              "inline-flex items-center gap-1.5 border-b-2 px-3.5 py-2 text-xs font-semibold transition-colors",
-              activeTab === "paginas"
-                ? "border-[#0284C7] text-[#0284C7] dark:text-sky-400"
-                : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-            )}
-          >
-            <FileText className="h-3.5 w-3.5" />
-            Páginas Originais ({pagesToUse.length})
-          </button>
-        </div>
+        {/* Índice Rápido do Tema (rolagem suave até a seção/fluxograma) */}
+        {visiblePages.length > 1 && (
+          <div className="mt-3.5 flex flex-wrap gap-1.5 border-t border-[#E2E8F0] dark:border-[#334155] pt-3">
+            {visiblePages.map((p) => (
+              <button
+                key={p.numero_pagina}
+                type="button"
+                onClick={() => scrollToSection(p.numero_pagina)}
+                className="inline-flex items-center gap-1 rounded-md border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0B1120] px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 hover:border-[#0284C7] hover:text-[#0284C7] transition-colors"
+              >
+                {p.possui_fluxograma ? (
+                  <GitBranch className="h-3 w-3 text-indigo-500" />
+                ) : p.possui_receita_modelo ? (
+                  <ClipboardList className="h-3 w-3 text-amber-500" />
+                ) : (
+                  <FileText className="h-3 w-3 text-slate-400" />
+                )}
+                <span className="max-w-[200px] truncate">
+                  {p.subtitulo_pagina || `Pág. ${p.numero_pagina}`}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Prescrição Pronta Gerada (Editável + Copiar 1 Clique) */}
@@ -367,132 +340,70 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
         </div>
       )}
 
-      {/* ABA 1: CONDUTA & PRESCRIÇÃO (TEXTO LIMPO, SELECIONÁVEL E COPIÁVEL) */}
-      {activeTab === "conduta" && (
-        <div className="space-y-4">
-          {loadingChapter ? (
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] py-16 text-xs text-slate-400">
-              <Loader2 className="h-4 w-4 animate-spin text-[#0284C7]" />
-              Consolidando protocolo completo...
-            </div>
-          ) : (
-            <>
-              {/* Receitas Modelo Verbatim já existentes no Manual */}
-              {verbatimPrescriptions.map((p) => (
-                <div
-                  key={`rx-${p.numero_pagina}`}
-                  className="rounded-xl border border-amber-300/80 dark:border-amber-700/70 bg-amber-50/70 dark:bg-amber-950/30 p-4"
-                >
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-200">
-                      <ClipboardList className="h-4 w-4 text-amber-600" />
-                      Modelo de Receita do Manual (Pág. {p.numero_pagina})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        p.texto_receita_verbatim &&
-                        copyText(`rx-${p.numero_pagina}`, p.texto_receita_verbatim)
-                      }
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
-                    >
-                      {copiedKey === `rx-${p.numero_pagina}` ? (
-                        <>
-                          <Check className="h-3.5 w-3.5" />
-                          Copiado!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3.5 w-3.5" />
-                          Copiar Receita
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  <pre className="whitespace-pre-wrap select-text rounded-lg border border-amber-200/80 dark:border-amber-800/60 bg-white dark:bg-[#0B1120] p-3 font-mono text-xs leading-relaxed text-slate-800 dark:text-slate-100">
-                    {p.texto_receita_verbatim}
-                  </pre>
-                </div>
-              ))}
-
-              {/* Seções Consolidadas do Protocolo — Texto 100% Copiável */}
-              <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] divide-y divide-[#E2E8F0] dark:divide-[#334155]">
-                {pagesToUse.map((p) => (
-                  <article key={p.numero_pagina} className="p-5">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-[#0F172A] dark:text-[#F1F5F9]">
-                          {p.subtitulo_pagina || `Seção — Página ${p.numero_pagina}`}
-                        </h3>
-                        {p.possui_fluxograma && (
-                          <button
-                            type="button"
-                            onClick={() => setActiveTab("fluxogramas")}
-                            className="inline-flex items-center gap-1 rounded bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20"
-                          >
-                            <GitBranch className="h-3 w-3" />
-                            Ver Fluxograma
-                          </button>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyText(
-                            `sec-${p.numero_pagina}`,
-                            `${p.subtitulo_pagina}\n${p.texto_indexacao}`
-                          )
-                        }
-                        title="Copiar esta seção"
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-[#0284C7]"
-                      >
-                        {copiedKey === `sec-${p.numero_pagina}` ? (
-                          <>
-                            <Check className="h-3 w-3 text-emerald-600" />
-                            Copiado
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-3 w-3" />
-                            Copiar
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    <p className="select-text whitespace-pre-line text-sm leading-relaxed text-slate-700 dark:text-slate-200">
-                      {p.texto_indexacao || "Consulte a imagem original na aba Fluxogramas / Páginas Originais."}
-                    </p>
-                  </article>
-                ))}
-              </div>
-            </>
-          )}
+      {/* Receitas Modelo Verbatim Extraídas do Manual (1-Clique Copiar) */}
+      {verbatimPrescriptions.map((p) => (
+        <div
+          key={`rx-${p.numero_pagina}`}
+          className="rounded-xl border border-amber-300/80 dark:border-amber-700/70 bg-amber-50/70 dark:bg-amber-950/30 p-4"
+        >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-200">
+              <ClipboardList className="h-4 w-4 text-amber-600" />
+              Exemplo de Receita do Manual (Pág. {p.numero_pagina})
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                p.texto_receita_verbatim &&
+                copyText(`rx-${p.numero_pagina}`, p.texto_receita_verbatim)
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+            >
+              {copiedKey === `rx-${p.numero_pagina}` ? (
+                <>
+                  <Check className="h-3.5 w-3.5" />
+                  Copiado!
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copiar Receita
+                </>
+              )}
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap select-text rounded-lg border border-amber-200/80 dark:border-amber-800/60 bg-white dark:bg-[#0B1120] p-3 font-mono text-xs leading-relaxed text-slate-800 dark:text-slate-100">
+            {p.texto_receita_verbatim}
+          </pre>
         </div>
-      )}
+      ))}
 
-      {/* ABA 2 & 3: TODOS OS FLUXOGRAMAS OU PÁGINAS EMPILHADOS (SEM FOLHEAR) */}
-      {(activeTab === "fluxogramas" || activeTab === "paginas") && (
+      {/* Protocolo Visual Original Empilhado (Tabelas + Fluxogramas em 150 DPI — Zero Alucinação) */}
+      {loadingChapter ? (
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] py-16 text-xs text-slate-400">
+          <Loader2 className="h-4 w-4 animate-spin text-[#0284C7]" />
+          Carregando páginas do tema...
+        </div>
+      ) : (
         <div className="space-y-4">
-          {loadingImgs && (
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] py-10 text-xs text-slate-400">
-              <Loader2 className="h-4 w-4 animate-spin text-[#0284C7]" />
-              Carregando imagens em alta nitidez...
-            </div>
-          )}
-
-          {(activeTab === "fluxogramas" ? flowchartPages : pagesToUse).map((p) => {
+          {visiblePages.map((p) => {
             const url = signedUrls[p.numero_pagina];
             return (
-              <div
-                key={`img-${p.numero_pagina}`}
+              <section
+                id={`manual-sec-${p.numero_pagina}`}
+                key={`page-${p.numero_pagina}`}
                 className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] overflow-hidden"
               >
                 <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] dark:border-[#334155] px-4 py-2.5 bg-slate-50/70 dark:bg-slate-800/40">
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    Pág. {p.numero_pagina} — {p.subtitulo_pagina || p.capitulo_tema}
-                  </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200">
+                      {p.subtitulo_pagina || p.capitulo_tema}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-slate-400">
+                      Pág. {p.numero_pagina}
+                    </span>
+                  </div>
+
                   {url && (
                     <button
                       type="button"
@@ -500,10 +411,10 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
                         setFullscreenZoom(100);
                         setFullscreenImg({
                           url,
-                          title: `Pág. ${p.numero_pagina} — ${p.subtitulo_pagina || item.titulo}`,
+                          title: `${p.subtitulo_pagina || item.titulo} (Pág. ${p.numero_pagina})`,
                         });
                       }}
-                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-[#0284C7] dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-slate-700"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-[#0284C7] dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-slate-700"
                     >
                       <Maximize2 className="h-3.5 w-3.5" />
                       Ampliar
@@ -516,24 +427,24 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={url}
-                      alt={`Página ${p.numero_pagina}`}
+                      alt={`${p.subtitulo_pagina || item.titulo} — Pág. ${p.numero_pagina}`}
                       onClick={() => {
                         setFullscreenZoom(100);
                         setFullscreenImg({
                           url,
-                          title: `Pág. ${p.numero_pagina} — ${p.subtitulo_pagina || item.titulo}`,
+                          title: `${p.subtitulo_pagina || item.titulo} (Pág. ${p.numero_pagina})`,
                         });
                       }}
                       className="max-w-full cursor-zoom-in rounded-lg bg-white shadow-sm"
                     />
                   ) : (
-                    <div className="flex h-40 items-center gap-2 text-xs text-slate-400">
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                    <div className="flex h-48 items-center gap-2 text-xs text-slate-400">
+                      <Loader2 className="h-4 w-4 animate-spin text-[#0284C7]" />
                       Carregando página {p.numero_pagina}...
                     </div>
                   )}
                 </div>
-              </div>
+              </section>
             );
           })}
         </div>
