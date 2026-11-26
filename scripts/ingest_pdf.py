@@ -116,28 +116,42 @@ def render_page_to_webp(page: fitz.Page, dpi: int = 150, quality: int = 82) -> b
     return buffer.getvalue()
 
 
+GENERATION_MODELS = ["gemini-3-flash-preview", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+EMBEDDING_MODEL = "gemini-embedding-001"
+
+
 def index_page_with_gemini(client: genai.Client, webp_bytes: bytes) -> dict[str, Any]:
-    """Envia a página WebP ao gemini-2.5-flash para extração estruturada de busca."""
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[
-            types.Part.from_bytes(data=webp_bytes, mime_type="image/webp"),
-            INDEXING_PROMPT,
-        ],
-        config=types.GenerateContentConfig(
-            temperature=0.1,
-            response_mime_type="application/json",
-        ),
-    )
-    return parse_json_response(response.text or "{}")
+    """Envia a página WebP ao Gemini Flash para extração estruturada de busca (com fallback)."""
+    last_exc: Exception | None = None
+    for model_name in GENERATION_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[
+                    types.Part.from_bytes(data=webp_bytes, mime_type="image/webp"),
+                    INDEXING_PROMPT,
+                ],
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                ),
+            )
+            return parse_json_response(response.text or "{}")
+        except Exception as exc:
+            last_exc = exc
+            if "503" in str(exc) or "404" in str(exc):
+                continue
+            raise
+    raise last_exc or RuntimeError("Falha ao indexar página com Gemini.")
 
 
 def generate_embedding(client: genai.Client, text: str) -> list[float]:
-    """Gera vetor de 768 dimensões com text-embedding-004."""
+    """Gera vetor de 768 dimensões com gemini-embedding-001."""
     safe_text = text.strip()[:8000] or "Documento clínico APS"
     resp = client.models.embed_content(
-        model="text-embedding-004",
+        model=EMBEDDING_MODEL,
         contents=safe_text,
+        config=types.EmbedContentConfig(output_dimensionality=768),
     )
     return list(resp.embeddings[0].values)
 

@@ -24,17 +24,51 @@ function cleanJsonText(raw: string): string {
   return trimmed;
 }
 
+const GENERATION_MODELS = [
+  "gemini-3-flash-preview",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+];
+const EMBEDDING_MODEL = "gemini-embedding-001";
+
+async function generateJsonWithFallback(
+  ai: GoogleGenAI,
+  contents: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["contents"],
+  temperature: number
+): Promise<string> {
+  let lastErr: unknown;
+  for (const model of GENERATION_MODELS) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          temperature,
+          responseMimeType: "application/json",
+        },
+      });
+      return response.text || "{}";
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("Falha ao chamar Gemini API.");
+}
+
 export async function embedClinicalText(text: string): Promise<number[]> {
   const ai = getGeminiClient();
   const safeText = text.trim().slice(0, 8000);
   const response = await ai.models.embedContent({
-    model: "text-embedding-004",
+    model: EMBEDDING_MODEL,
     contents: safeText,
+    config: {
+      outputDimensionality: 768,
+    },
   });
 
   const values = response.embeddings?.[0]?.values;
   if (!values || values.length === 0) {
-    throw new Error("Falha ao gerar embedding com text-embedding-004.");
+    throw new Error("Falha ao gerar embedding com gemini-embedding-001.");
   }
   return values;
 }
@@ -66,9 +100,9 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido com a estrutura:
   "texto_indexacao": "Texto denso em termos clínicos, fármacos, doses e critérios presentes na página para indexação de busca."
 }`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
+  const rawText = await generateJsonWithFallback(
+    ai,
+    [
       {
         inlineData: {
           mimeType: "image/webp",
@@ -77,13 +111,10 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido com a estrutura:
       },
       prompt,
     ],
-    config: {
-      temperature: 0.1,
-      responseMimeType: "application/json",
-    },
-  });
+    0.1
+  );
 
-  const parsed = JSON.parse(cleanJsonText(response.text || "{}")) as Partial<PageIndexMetadata>;
+  const parsed = JSON.parse(cleanJsonText(rawText)) as Partial<PageIndexMetadata>;
   const receita =
     typeof parsed.texto_receita_verbatim === "string" && parsed.texto_receita_verbatim.trim().length > 0
       ? parsed.texto_receita_verbatim.trim()
@@ -161,16 +192,9 @@ Retorne EXCLUSIVAMENTE um JSON válido neste formato:
   "fontes_citadas": ["Manual X v1.5 • Pág. Y", "TelessaúdeRS • DD/MM/AAAA — Título curto"]
 }`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      temperature: 0.15,
-      responseMimeType: "application/json",
-    },
-  });
+  const rawText = await generateJsonWithFallback(ai, prompt, 0.15);
 
-  const parsed = JSON.parse(cleanJsonText(response.text || "{}")) as Partial<ClinicalSynthesis>;
+  const parsed = JSON.parse(cleanJsonText(rawText)) as Partial<ClinicalSynthesis>;
   return {
     conduta: Array.isArray(parsed.conduta) ? parsed.conduta.map(String) : [],
     prescricao_doses: Array.isArray(parsed.prescricao_doses)
@@ -214,16 +238,9 @@ PERGUNTA: ${titulo}
 TEXTO OFICIAL:
 ${textoCompleto.slice(0, 12000)}`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      temperature: 0.1,
-      responseMimeType: "application/json",
-    },
-  });
+  const rawText = await generateJsonWithFallback(ai, prompt, 0.1);
 
-  const parsed = JSON.parse(cleanJsonText(response.text || "{}")) as Partial<StructuredTelessaude>;
+  const parsed = JSON.parse(cleanJsonText(rawText)) as Partial<StructuredTelessaude>;
   return {
     especialidade: (parsed.especialidade || "Atenção Primária").trim(),
     resposta_direta: (parsed.resposta_direta || "").trim(),

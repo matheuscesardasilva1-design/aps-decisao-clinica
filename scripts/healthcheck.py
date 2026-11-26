@@ -19,11 +19,14 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from google import genai
+from google.genai import types
 
 load_dotenv()
 load_dotenv(".env.local")
 
-TELESSAUDE_URL = "https://www.ufrgs.br/telessauders/perguntas/"
+TELESSAUDE_API_URL = "https://api-site.telessauders.ufrgs.br/perguntas/search-by-tags/?fields=*&limit=5&offset=0"
+GENERATION_MODELS = ["gemini-3-flash-preview", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+EMBEDDING_MODEL = "gemini-embedding-001"
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -119,55 +122,57 @@ def check_supabase_storage(sb: Client) -> bool:
 
 
 def check_gemini(gemini_key: str) -> bool:
-    print(f"\n{INFO} 3/4 Verificando Google Gemini API (gemini-2.5-flash + text-embedding-004)...")
+    print(f"\n{INFO} 3/4 Verificando Google Gemini API ({GENERATION_MODELS[0]} + {EMBEDDING_MODEL})...")
     all_ok = True
-    try:
-        client = genai.Client(api_key=gemini_key)
-        gen_resp = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents="Responda apenas com a palavra: OK",
-        )
-        text = (gen_resp.text or "").strip()
-        print(f"  {OK} gemini-2.5-flash respondeu: '{text[:40]}'")
-    except Exception as exc:
-        print(f"  {FAIL} Falha no gemini-2.5-flash: {exc}")
+    gen_ok = False
+    client = genai.Client(api_key=gemini_key)
+    for model_name in GENERATION_MODELS:
+        try:
+            gen_resp = client.models.generate_content(
+                model=model_name,
+                contents="Responda apenas com a palavra: OK",
+            )
+            text = (gen_resp.text or "").strip()
+            print(f"  {OK} {model_name} respondeu: '{text[:40]}'")
+            gen_ok = True
+            break
+        except Exception as exc:
+            print(f"  [AVISO] {model_name} indisponível ({exc.__class__.__name__}), tentando fallback...")
+    if not gen_ok:
+        print(f"  {FAIL} Nenhum modelo Gemini Flash respondeu.")
         all_ok = False
 
     try:
-        client = genai.Client(api_key=gemini_key)
         emb_resp = client.models.embed_content(
-            model="text-embedding-004",
+            model=EMBEDDING_MODEL,
             contents="Hipertensão arterial primária na atenção primária à saúde",
+            config=types.EmbedContentConfig(output_dimensionality=768),
         )
         values = emb_resp.embeddings[0].values
-        print(f"  {OK} text-embedding-004 respondeu com vetor de {len(values)} dimensões.")
+        print(f"  {OK} {EMBEDDING_MODEL} respondeu com vetor de {len(values)} dimensões.")
     except Exception as exc:
-        print(f"  {FAIL} Falha no text-embedding-004: {exc}")
+        print(f"  {FAIL} Falha no {EMBEDDING_MODEL}: {exc}")
         all_ok = False
 
     return all_ok
 
 
 def check_telessaude() -> bool:
-    print(f"\n{INFO} 4/4 Verificando acesso HTTP ao TelessaúdeRS-UFRGS...")
+    print(f"\n{INFO} 4/4 Verificando acesso HTTP à API oficial do TelessaúdeRS-UFRGS...")
     try:
-        resp = requests.get(TELESSAUDE_URL, headers=HEADERS, timeout=20)
+        resp = requests.get(TELESSAUDE_API_URL, headers={**HEADERS, "Accept": "application/json"}, timeout=20)
         if resp.status_code != 200:
-            print(f"  {FAIL} HTTP {resp.status_code} ao acessar {TELESSAUDE_URL}")
+            print(f"  {FAIL} HTTP {resp.status_code} ao acessar {TELESSAUDE_API_URL}")
             return False
 
-        soup = BeautifulSoup(resp.text, "lxml")
-        links = [
-            a["href"]
-            for a in soup.find_all("a", href=True)
-            if "/perguntas/" in a["href"] and a["href"].rstrip("/") != TELESSAUDE_URL.rstrip("/")
-        ]
-        unique_links = sorted(set(links))
+        data = resp.json()
+        total = data.get("total_perguntas", 0)
+        items = data.get("perguntas", [])
         print(
-            f"  {OK} Acesso HTTP 200 em {TELESSAUDE_URL} "
-            f"({len(unique_links)} links de perguntas detectados na página inicial)."
+            f"  {OK} Acesso HTTP 200 na API oficial TelessaúdeRS-UFRGS "
+            f"(total: {total} perguntas; amostra retornada: {len(items)})."
         )
-        return True
+        return len(items) > 0
     except Exception as exc:
         print(f"  {FAIL} Erro ao acessar TelessaúdeRS: {exc}")
         return False

@@ -3,41 +3,39 @@ import { createClient } from "@/lib/supabase/server";
 import { embedClinicalText, structureTelessaudeQuestion } from "@/lib/gemini";
 import { sleep } from "@/lib/utils";
 
-const TELESSAUDE_BASE = "https://www.ufrgs.br/telessauders/perguntas/";
+const TELESSAUDE_API =
+  "https://api-site.telessauders.ufrgs.br/perguntas/search-by-tags/?fields=*&limit=20&offset=0";
+const TELESSAUDE_WEB_BASE = "https://telessauders.ufrgs.br/perguntas";
 const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+interface TelessaudeApiItem {
+  id: number;
+  titulo?: string;
+  resumo?: string;
+  rendered_body?: string;
+  conteudo?: string;
+  referencias?: string;
+  data_de_publicacao?: string;
+  data_referencia?: string;
+  tags?: string[];
+  slug?: string;
+}
 
 function stripHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<\/(p|li|h[1-6]|div|br)>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
     .replace(/&#8211;/g, "-")
     .replace(/&#8217;/g, "'")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function extractQuestionLinks(html: string): string[] {
-  const regex = /href=["'](https?:\/\/www\.ufrgs\.br\/telessauders\/perguntas\/[^"'#?]+)["']/gi;
-  const found = new Set<string>();
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(html)) !== null) {
-    const url = match[1].replace(/\/+$/, "");
-    if (
-      url !== TELESSAUDE_BASE.replace(/\/+$/, "") &&
-      !url.includes("/page/") &&
-      !url.includes("/categoria/") &&
-      !url.includes("/tag/") &&
-      !url.includes("/feed")
-    ) {
-      found.add(`${url}/`);
-    }
-  }
-  return Array.from(found);
 }
 
 export async function POST() {
@@ -52,7 +50,7 @@ export async function POST() {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
 
-    // Opção 1: Se GITHUB_TOKEN + GITHUB_REPO estiverem configurados, dispara o GitHub Action completo
+    // Opção 1: Se GITHUB_TOKEN + GITHUB_REPO estiverem configurados, dispara o GitHub Action
     const ghToken = process.env.GITHUB_TOKEN;
     const ghRepo = process.env.GITHUB_REPO;
     if (ghToken && ghRepo) {
@@ -81,14 +79,18 @@ export async function POST() {
       }
     }
 
-    // Opção 2: Captura direta leve (até 3 novidades por clique para respeitar timeout serverless)
-    const listResp = await fetch(TELESSAUDE_BASE, {
-      headers: { "User-Agent": USER_AGENT, "Accept-Language": "pt-BR,pt;q=0.9" },
+    // Opção 2: Captura direta via API JSON oficial do TelessaúdeRS-UFRGS (até 3 novidades por clique)
+    const apiResp = await fetch(TELESSAUDE_API, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "application/json",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+      },
       cache: "no-store",
     });
 
-    if (!listResp.ok) {
-      const msg = `Falha HTTP ${listResp.status} ao acessar TelessaúdeRS.`;
+    if (!apiResp.ok) {
+      const msg = `Falha HTTP ${apiResp.status} ao acessar API do TelessaúdeRS.`;
       await supabase.from("sync_logs").insert({
         fonte: "telessaude_rs",
         status: "erro",
@@ -99,18 +101,20 @@ export async function POST() {
       return NextResponse.json({ error: msg }, { status: 502 });
     }
 
-    const listHtml = await listResp.text();
-    const links = extractQuestionLinks(listHtml);
+    const payload = (await apiResp.json()) as {
+      total_perguntas?: number;
+      perguntas?: TelessaudeApiItem[];
+    };
+    const items = payload.perguntas || [];
 
-    if (links.length === 0) {
-      const msg = "Nenhum link detectado na página do TelessaúdeRS (possível mudança de HTML).";
+    if (items.length === 0) {
+      const msg = "Nenhuma pergunta retornada pela API do TelessaúdeRS.";
       await supabase.from("sync_logs").insert({
         fonte: "telessaude_rs",
         status: "erro",
         novas_perguntas: 0,
         total_verificadas: 0,
         mensagem: msg,
-        detalhes_erro: { html_snippet: listHtml.slice(0, 2000) },
       });
       return NextResponse.json({ error: msg }, { status: 502 });
     }
@@ -122,17 +126,21 @@ export async function POST() {
     const existingSet = new Set(
       (existingRows || []).map((r) => r.url_original.replace(/\/+$/, ""))
     );
-    const newLinks = links
-      .filter((u) => !existingSet.has(u.replace(/\/+$/, "")))
+
+    const newItems = items
+      .filter((item) => {
+        const url = `${TELESSAUDE_WEB_BASE}/${item.id}`;
+        return !existingSet.has(url);
+      })
       .slice(0, 3);
 
-    if (newLinks.length === 0) {
-      const msg = `Base já atualizada (${links.length} links verificados, 0 novidades).`;
+    if (newItems.length === 0) {
+      const msg = `Base já atualizada (${items.length} perguntas verificadas, 0 novidades).`;
       await supabase.from("sync_logs").insert({
         fonte: "telessaude_rs",
         status: "sucesso",
         novas_perguntas: 0,
-        total_verificadas: links.length,
+        total_verificadas: items.length,
         mensagem: msg,
       });
       return NextResponse.json({ mode: "direct", novas: 0, message: msg });
@@ -141,34 +149,25 @@ export async function POST() {
     let inserted = 0;
     const errors: { url: string; error: string }[] = [];
 
-    for (let i = 0; i < newLinks.length; i++) {
-      const url = newLinks[i];
+    for (let i = 0; i < newItems.length; i++) {
+      const item = newItems[i];
+      const url = `${TELESSAUDE_WEB_BASE}/${item.id}`;
       try {
-        const pageResp = await fetch(url, {
-          headers: { "User-Agent": USER_AGENT, "Accept-Language": "pt-BR,pt;q=0.9" },
-          cache: "no-store",
-        });
-        if (!pageResp.ok) throw new Error(`HTTP ${pageResp.status}`);
-        const html = await pageResp.text();
-
-        const titleMatch = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html);
-        const titulo = titleMatch ? stripHtml(titleMatch[1]) : url;
-
-        const dateMatch = /datetime=["'](\d{4}-\d{2}-\d{2})/i.exec(html);
-        const dataPub = dateMatch ? dateMatch[1] : new Date().toISOString().slice(0, 10);
-
-        const articleMatch =
-          /<div[^>]*class=["'][^"']*entry-content[^"']*["'][^>]*>([\s\S]*?)<\/div>\s*(?:<\/article>|<footer|<div[^>]*class=["'][^"']*sharedaddy)/i.exec(
-            html
-          ) || /<article[^>]*>([\s\S]*?)<\/article>/i.exec(html);
-
-        const textoCompleto = stripHtml(articleMatch ? articleMatch[1] : html).slice(0, 14000);
-        if (textoCompleto.length < 60) {
-          throw new Error("Conteúdo clínico insuficiente na página.");
-        }
+        const titulo = (item.titulo || "").trim() || `Pergunta #${item.id}`;
+        const textoCompleto = stripHtml(item.rendered_body || item.conteudo || item.resumo || "").slice(
+          0,
+          16000
+        );
+        const referencias = stripHtml(item.referencias || "").slice(0, 5000);
+        const dataPub =
+          item.data_de_publicacao || item.data_referencia || new Date().toISOString().slice(0, 10);
 
         const structured = await structureTelessaudeQuestion(titulo, textoCompleto);
-        const embText = `${titulo}\n${structured.resposta_direta}\n${structured.conduta_direta.join(" ")}\n${textoCompleto.slice(0, 3000)}`;
+        const mergedTags = Array.from(
+          new Set([...(item.tags || []), ...structured.palavras_chave])
+        ).slice(0, 30);
+
+        const embText = `${titulo}\n${structured.resposta_direta || item.resumo || ""}\n${structured.conduta_direta.join(" ")}\n${textoCompleto.slice(0, 3000)}`;
         const embedding = await embedClinicalText(embText);
 
         await supabase.from("perguntas_telessaude").upsert(
@@ -177,13 +176,13 @@ export async function POST() {
             titulo_pergunta: titulo,
             data_publicacao: dataPub,
             especialidade: structured.especialidade,
-            resposta_direta: structured.resposta_direta,
+            resposta_direta: structured.resposta_direta || (item.resumo || "").trim(),
             texto_completo: textoCompleto,
             conduta_direta: structured.conduta_direta,
             prescricao_exames: structured.prescricao_exames,
             quando_encaminhar: structured.quando_encaminhar,
-            referencias: "",
-            palavras_chave: structured.palavras_chave,
+            referencias,
+            palavras_chave: mergedTags,
             is_new: true,
             embedding: `[${embedding.join(",")}]`,
           },
@@ -191,7 +190,7 @@ export async function POST() {
         );
 
         inserted++;
-        if (i < newLinks.length - 1) {
+        if (i < newItems.length - 1) {
           await sleep(4000);
         }
       } catch (err) {
@@ -200,13 +199,13 @@ export async function POST() {
     }
 
     const status = errors.length === 0 ? "sucesso" : inserted > 0 ? "parcial" : "erro";
-    const msg = `Captura manual: ${inserted} nova(s) pergunta(s) salva(s) de ${links.length} verificada(s).`;
+    const msg = `Captura manual: ${inserted} nova(s) pergunta(s) salva(s) de ${items.length} verificada(s).`;
 
     await supabase.from("sync_logs").insert({
       fonte: "telessaude_rs",
       status,
       novas_perguntas: inserted,
-      total_verificadas: links.length,
+      total_verificadas: items.length,
       mensagem: msg,
       detalhes_erro: errors.length > 0 ? { erros: errors } : null,
     });
