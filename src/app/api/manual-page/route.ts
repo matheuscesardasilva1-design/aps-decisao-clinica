@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
       especialidade: null,
       resposta_direta: null,
       texto_completo: null,
+      conteudo_html: null,
       conduta_direta: null,
       prescricao_exames: null,
       quando_encaminhar: null,

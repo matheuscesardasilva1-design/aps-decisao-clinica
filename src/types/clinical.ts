@@ -41,6 +41,7 @@ export interface SearchResultItem {
   especialidade: string | null;
   resposta_direta: string | null;
   texto_completo: string | null;
+  conteudo_html: string | null;
   conduta_direta: string[] | null;
   prescricao_exames: string[] | null;
   quando_encaminhar: string[] | null;

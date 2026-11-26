@@ -116,12 +116,12 @@ def render_page_to_webp(page: fitz.Page, dpi: int = 150, quality: int = 82) -> b
     return buffer.getvalue()
 
 
-GENERATION_MODELS = ["gemini-3-flash-preview", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+GENERATION_MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3-flash-preview"]
 EMBEDDING_MODEL = "gemini-embedding-001"
 
 
 def index_page_with_gemini(client: genai.Client, webp_bytes: bytes) -> dict[str, Any]:
-    """Envia a página WebP ao Gemini Flash para extração estruturada de busca (com fallback)."""
+    """Envia a página WebP ao Gemini Flash para extração estruturada de busca (com rotação de modelos em 429/503)."""
     last_exc: Exception | None = None
     for model_name in GENERATION_MODELS:
         try:
@@ -139,7 +139,8 @@ def index_page_with_gemini(client: genai.Client, webp_bytes: bytes) -> dict[str,
             return parse_json_response(response.text or "{}")
         except Exception as exc:
             last_exc = exc
-            if "503" in str(exc) or "404" in str(exc):
+            err_s = str(exc).lower()
+            if any(k in err_s for k in ("503", "404", "429", "resource_exhausted", "quota")):
                 continue
             raise
     raise last_exc or RuntimeError("Falha ao indexar página com Gemini.")

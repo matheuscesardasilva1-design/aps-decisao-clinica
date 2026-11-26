@@ -99,6 +99,42 @@ def parse_json_response(raw_text: str) -> dict[str, Any]:
         raise
 
 
+ALLOWED_HTML_TAGS = {
+    "p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li",
+    "h2", "h3", "h4", "table", "thead", "tbody", "tfoot", "tr", "th", "td",
+    "blockquote", "a", "sup", "sub", "caption",
+}
+
+
+def sanitize_clinical_html(html: str) -> str:
+    """Preserva tabelas, listas e negritos oficiais removendo estilos inline e scripts."""
+    if not html:
+        return ""
+    soup = BeautifulSoup(html, "lxml")
+    for tag in soup.select("script, style, iframe, form, object, embed, img"):
+        tag.decompose()
+
+    for tag in list(soup.find_all(True)):
+        if tag.name not in ALLOWED_HTML_TAGS:
+            tag.unwrap()
+            continue
+        if tag.name == "a":
+            href = tag.get("href", "")
+            tag.attrs = {"href": href, "target": "_blank", "rel": "noopener noreferrer"} if href.startswith(("http://", "https://")) else {}
+        elif tag.name in ("td", "th"):
+            keep = {}
+            if tag.get("colspan"):
+                keep["colspan"] = tag["colspan"]
+            if tag.get("rowspan"):
+                keep["rowspan"] = tag["rowspan"]
+            tag.attrs = keep
+        else:
+            tag.attrs = {}
+
+    body = soup.body or soup
+    return "".join(str(c) for c in body.contents).strip()
+
+
 def html_to_text(html: str) -> str:
     if not html:
         return ""
@@ -247,6 +283,7 @@ def main() -> None:
             print(f"\n[{idx}/{len(new_items)}] Processando: {titulo[:75]}...")
             try:
                 body_html = item.get("rendered_body") or item.get("conteudo") or ""
+                conteudo_html = sanitize_clinical_html(body_html)[:45000]
                 texto_completo = html_to_text(body_html)[:18000]
                 if len(texto_completo) < 40:
                     texto_completo = (item.get("resumo") or "").strip()
@@ -295,6 +332,7 @@ def main() -> None:
                         "especialidade": especialidade,
                         "resposta_direta": resposta_direta,
                         "texto_completo": texto_completo,
+                        "conteudo_html": conteudo_html,
                         "conduta_direta": conduta_direta,
                         "prescricao_exames": prescricao_exames,
                         "quando_encaminhar": quando_encaminhar,

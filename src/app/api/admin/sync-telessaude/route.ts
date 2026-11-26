@@ -22,6 +22,16 @@ interface TelessaudeApiItem {
   slug?: string;
 }
 
+function sanitizeClinicalHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/\s+(?:style|class|id|width|height|on\w+)=["'][^"']*["']/gi, "")
+    .replace(/<\/?span[^>]*>/gi, "")
+    .trim();
+}
+
 function stripHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -154,7 +164,9 @@ export async function POST() {
       const url = `${TELESSAUDE_WEB_BASE}/${item.id}`;
       try {
         const titulo = (item.titulo || "").trim() || `Pergunta #${item.id}`;
-        const textoCompleto = stripHtml(item.rendered_body || item.conteudo || item.resumo || "").slice(
+        const rawBodyHtml = item.rendered_body || item.conteudo || "";
+        const conteudoHtml = sanitizeClinicalHtml(rawBodyHtml).slice(0, 45000);
+        const textoCompleto = stripHtml(rawBodyHtml || item.resumo || "").slice(
           0,
           16000
         );
@@ -178,6 +190,7 @@ export async function POST() {
             especialidade: structured.especialidade,
             resposta_direta: structured.resposta_direta || (item.resumo || "").trim(),
             texto_completo: textoCompleto,
+            conteudo_html: conteudoHtml,
             conduta_direta: structured.conduta_direta,
             prescricao_exames: structured.prescricao_exames,
             quando_encaminhar: structured.quando_encaminhar,

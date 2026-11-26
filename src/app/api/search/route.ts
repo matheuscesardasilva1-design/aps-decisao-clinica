@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { data, error } = await supabase.rpc("buscar_conhecimento_clinico", {
+    const { data, error } = await supabase.rpc("buscar_conhecimento_clinico_v2", {
       query_text: queryText,
       query_embedding: queryEmbedding,
       filtro_categoria: filter,
