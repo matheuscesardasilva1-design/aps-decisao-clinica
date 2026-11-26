@@ -29,7 +29,7 @@ import traceback
 from typing import Any
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -40,7 +40,7 @@ load_dotenv(".env.local")
 
 API_URL = "https://api-site.telessauders.ufrgs.br/perguntas/search-by-tags/"
 WEB_BASE_URL = "https://telessauders.ufrgs.br/perguntas"
-GENERATION_MODELS = ["gemini-3-flash-preview", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+GENERATION_MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3-flash-preview"]
 EMBEDDING_MODEL = "gemini-embedding-001"
 
 HEADERS = {
@@ -102,25 +102,54 @@ def parse_json_response(raw_text: str) -> dict[str, Any]:
 ALLOWED_HTML_TAGS = {
     "p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li",
     "h2", "h3", "h4", "table", "thead", "tbody", "tfoot", "tr", "th", "td",
-    "blockquote", "a", "sup", "sub", "caption",
+    "blockquote", "a", "sup", "sub", "caption", "img", "figure", "figcaption",
 }
 
 
 def sanitize_clinical_html(html: str) -> str:
-    """Preserva tabelas, listas e negritos oficiais removendo estilos inline e scripts."""
+    """Preserva tabelas, figuras/fluxogramas, listas e negritos oficiais removendo scripts e lixo de Word."""
     if not html:
         return ""
+    # Remove blocos condicionais de Word/IE (ex: [if IE]>)
+    html = re.sub(r"<!--\[if[\s\S]*?<!\[endif\]-->", "", html, flags=re.IGNORECASE)
+    html = re.sub(r"\[if\s+[^\]]+\]>?", "", html, flags=re.IGNORECASE)
+
     soup = BeautifulSoup(html, "lxml")
-    for tag in soup.select("script, style, iframe, form, object, embed, img"):
+    for comment in soup.find_all(string=lambda t: isinstance(t, Comment)):
+        comment.extract()
+
+    for tag in soup.select("script, style, iframe, form, object, embed, title, meta"):
         tag.decompose()
 
     for tag in list(soup.find_all(True)):
+        # Preserva fluxogramas interativos oficiais draw.io / diagrams.net do TelessaúdeRS
+        if tag.name == "div" and "mxgraph" in (tag.get("class") or []) and tag.get("data-mxgraph"):
+            tag.attrs = {
+                "class": "mxgraph",
+                "data-mxgraph": tag["data-mxgraph"],
+                "style": "max-width:100%;border:1px solid rgba(15,23,42,0.1);border-radius:12px;margin:16px 0;background:#ffffff;overflow:hidden;",
+            }
+            continue
         if tag.name not in ALLOWED_HTML_TAGS:
             tag.unwrap()
             continue
         if tag.name == "a":
             href = tag.get("href", "")
             tag.attrs = {"href": href, "target": "_blank", "rel": "noopener noreferrer"} if href.startswith(("http://", "https://")) else {}
+        elif tag.name == "img":
+            src = (tag.get("src") or "").strip()
+            if src.startswith("/"):
+                src = f"https://api-site.telessauders.ufrgs.br{src}"
+            if src.startswith(("http://", "https://")):
+                alt = (tag.get("alt") or "Figura oficial TelessaúdeRS").strip()
+                tag.attrs = {
+                    "src": src,
+                    "alt": alt,
+                    "loading": "lazy",
+                    "style": "max-width:100%;height:auto;border-radius:10px;margin:16px auto;display:block;background:#ffffff;padding:8px;border:1px solid rgba(15,23,42,0.08);",
+                }
+            else:
+                tag.decompose()
         elif tag.name in ("td", "th"):
             keep = {}
             if tag.get("colspan"):
@@ -187,7 +216,8 @@ def structure_with_gemini(client: genai.Client, titulo: str, texto_completo: str
             return parse_json_response(resp.text or "{}")
         except Exception as exc:
             last_exc = exc
-            if "503" in str(exc) or "404" in str(exc):
+            err_s = str(exc).lower()
+            if any(k in err_s for k in ("503", "404", "429", "resource_exhausted", "quota")):
                 continue
             raise
     raise last_exc or RuntimeError("Falha ao estruturar pergunta com Gemini.")
@@ -283,7 +313,7 @@ def main() -> None:
             print(f"\n[{idx}/{len(new_items)}] Processando: {titulo[:75]}...")
             try:
                 body_html = item.get("rendered_body") or item.get("conteudo") or ""
-                conteudo_html = sanitize_clinical_html(body_html)[:45000]
+                conteudo_html = sanitize_clinical_html(body_html)[:180000]
                 texto_completo = html_to_text(body_html)[:18000]
                 if len(texto_completo) < 40:
                     texto_completo = (item.get("resumo") or "").strip()

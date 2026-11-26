@@ -77,6 +77,33 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
 
   const hasRichHtml = Boolean(item.conteudo_html && item.conteudo_html.trim().length > 0);
   const hasTable = Boolean(item.conteudo_html && /<table/i.test(item.conteudo_html));
+  const hasMxGraph = Boolean(item.conteudo_html && /mxgraph/i.test(item.conteudo_html));
+
+  // Renderiza fluxogramas oficiais draw.io (mxgraph) do TelessaúdeRS
+  React.useEffect(() => {
+    if (!hasMxGraph) return;
+
+    const runViewer = () => {
+      const gv = (window as unknown as { GraphViewer?: { processElements?: () => void } })
+        .GraphViewer;
+      if (gv?.processElements) {
+        gv.processElements();
+      }
+    };
+
+    const existing = document.getElementById("diagrams-net-viewer-script");
+    if (existing) {
+      setTimeout(runViewer, 80);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = "diagrams-net-viewer-script";
+    script.src = "https://viewer.diagrams.net/js/viewer-static.min.js";
+    script.async = true;
+    script.onload = () => setTimeout(runViewer, 80);
+    document.body.appendChild(script);
+  }, [hasMxGraph, item.id, item.conteudo_html]);
 
   return (
     <div className="h-full space-y-4 overflow-y-auto pr-1 pb-8">
