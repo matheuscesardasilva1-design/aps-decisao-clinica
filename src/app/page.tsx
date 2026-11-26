@@ -26,7 +26,14 @@ export default async function HomePage() {
       incluir_arquivados: false,
       match_count: 50,
     });
-    initialResults = groupManualTopics((data || []) as SearchResultItem[]).slice(0, 30);
+    initialResults = groupManualTopics((data || []) as SearchResultItem[])
+      .slice(0, 30)
+      .map((item) => ({
+        ...item,
+        conteudo_html: null,
+        texto_completo: null,
+        referencias: null,
+      }));
   } catch (err) {
     console.warn("[HomePage SSR] Fallback para carregamento client:", err);
   }

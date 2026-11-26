@@ -28,11 +28,39 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
   const [marking, setMarking] = React.useState(false);
   const [showRefs, setShowRefs] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const [loadingDetail, setLoadingDetail] = React.useState(false);
+  const [fullHtml, setFullHtml] = React.useState<string | null>(item.conteudo_html);
+  const [fullText, setFullText] = React.useState<string | null>(item.texto_completo);
+  const [fullRefs, setFullRefs] = React.useState<string | null>(item.referencias);
 
   React.useEffect(() => {
     setShowRefs(false);
     setCopied(false);
-  }, [item.id]);
+    setFullHtml(item.conteudo_html);
+    setFullText(item.texto_completo);
+    setFullRefs(item.referencias);
+
+    if (item.conteudo_html || item.texto_completo) return;
+
+    let active = true;
+    setLoadingDetail(true);
+    fetch(`/api/telessaude/${encodeURIComponent(item.id)}`)
+      .then((r) => r.json())
+      .then((data: { detail?: { conteudo_html?: string; texto_completo?: string; referencias?: string } }) => {
+        if (!active || !data.detail) return;
+        setFullHtml(data.detail.conteudo_html || null);
+        setFullText(data.detail.texto_completo || null);
+        setFullRefs(data.detail.referencias || null);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingDetail(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [item.id, item.conteudo_html, item.texto_completo, item.referencias]);
 
   const handleCopySummary = async () => {
     const parts = [
@@ -75,9 +103,9 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
     (item.prescricao_exames && item.prescricao_exames.length > 0) ||
     (item.quando_encaminhar && item.quando_encaminhar.length > 0);
 
-  const hasRichHtml = Boolean(item.conteudo_html && item.conteudo_html.trim().length > 0);
-  const hasTable = Boolean(item.conteudo_html && /<table/i.test(item.conteudo_html));
-  const hasMxGraph = Boolean(item.conteudo_html && /mxgraph/i.test(item.conteudo_html));
+  const hasRichHtml = Boolean(fullHtml && fullHtml.trim().length > 0);
+  const hasTable = Boolean(fullHtml && /<table/i.test(fullHtml));
+  const hasMxGraph = Boolean(fullHtml && /mxgraph/i.test(fullHtml));
 
   // Renderiza fluxogramas oficiais draw.io (mxgraph) do TelessaúdeRS
   React.useEffect(() => {
@@ -103,7 +131,7 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
     script.async = true;
     script.onload = () => setTimeout(runViewer, 80);
     document.body.appendChild(script);
-  }, [hasMxGraph, item.id, item.conteudo_html]);
+  }, [hasMxGraph, item.id, fullHtml]);
 
   return (
     <div className="h-full space-y-4 overflow-y-auto pr-1 pb-8">
@@ -252,8 +280,8 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
         </section>
       )}
 
-      {/* Texto Oficial Completo + Tabelas Oficiais (Visível por Padrão) */}
-      {(hasRichHtml || item.texto_completo) && (
+      {/* Texto Oficial Completo + Tabelas Oficiais (Carregado sob demanda) */}
+      {(loadingDetail || hasRichHtml || fullText) && (
         <section className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between border-b border-[#E2E8F0] dark:border-[#334155] pb-2.5">
             <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
@@ -262,21 +290,26 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
             </h3>
           </div>
 
-          {hasRichHtml ? (
+          {loadingDetail ? (
+            <div className="flex items-center gap-2 py-8 text-xs text-slate-400">
+              <Loader2 className="h-4 w-4 animate-spin text-teal-600" />
+              Carregando nota técnica, tabelas e fluxogramas...
+            </div>
+          ) : hasRichHtml ? (
             <div
               className="clinical-html"
-              dangerouslySetInnerHTML={{ __html: item.conteudo_html || "" }}
+              dangerouslySetInnerHTML={{ __html: fullHtml || "" }}
             />
           ) : (
             <div className="whitespace-pre-line text-sm leading-relaxed text-slate-700 dark:text-slate-200">
-              {item.texto_completo}
+              {fullText}
             </div>
           )}
         </section>
       )}
 
       {/* Referências (Expansível) */}
-      {item.referencias && (
+      {fullRefs && (
         <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B]">
           <button
             type="button"
@@ -294,7 +327,7 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
           {showRefs && (
             <div className="border-t border-[#E2E8F0] dark:border-[#334155] p-4">
               <p className="whitespace-pre-line text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                {item.referencias}
+                {fullRefs}
               </p>
             </div>
           )}

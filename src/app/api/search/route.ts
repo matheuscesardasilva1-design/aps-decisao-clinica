@@ -149,7 +149,15 @@ export async function POST(request: NextRequest) {
     }
 
     const rawResults = (data || []) as SearchResultItem[];
-    const results = groupManualTopics(rawResults).slice(0, requestedLimit);
+    // Remove HTML/texto pesados da listagem para deixar busca e home instantâneas (~95% menor)
+    const results = groupManualTopics(rawResults)
+      .slice(0, requestedLimit)
+      .map((item) => ({
+        ...item,
+        conteudo_html: null,
+        texto_completo: null,
+        referencias: null,
+      }));
 
     return NextResponse.json({
       results,
