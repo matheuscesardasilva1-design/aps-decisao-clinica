@@ -48,7 +48,7 @@ export function TelessaudeViewer({ item, onMarkAsRead }: TelessaudeViewerProps) 
   const hasTable = Boolean(item.conteudo_html && /<table/i.test(item.conteudo_html));
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto pr-1 pb-6">
+    <div className="h-full space-y-4 overflow-y-auto pr-1 pb-8">
       {/* Cabeçalho + Resposta Direta */}
       <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-5 shadow-sm">
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">

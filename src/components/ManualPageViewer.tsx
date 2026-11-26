@@ -227,7 +227,7 @@ export function ManualPageViewer({
   };
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto pr-1 pb-8">
+    <div className="h-full space-y-4 overflow-y-auto pr-1 pb-8">
       {/* 1. Cabeçalho Consolidado do Tema */}
       <div className="rounded-xl border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] p-5 shadow-sm">
         <div className="mb-2 flex flex-wrap items-center gap-2">
