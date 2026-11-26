@@ -9,6 +9,8 @@ Valida:
   4. Acesso HTTP à página oficial de Perguntas da Semana do TelessaúdeRS-UFRGS.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import uuid

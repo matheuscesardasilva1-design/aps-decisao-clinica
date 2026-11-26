@@ -14,6 +14,8 @@ Fluxo:
      de seletor) — mantendo o banco Supabase sempre ativo no Free Tier.
 """
 
+from __future__ import annotations
+
 import argparse
 import datetime
 import json
