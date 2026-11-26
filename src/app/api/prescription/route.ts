@@ -19,14 +19,16 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as {
       titulo?: string;
       conteudo?: string;
+      imagePaths?: string[];
     };
 
     const titulo = (body.titulo || "").trim();
     const conteudo = (body.conteudo || "").trim();
+    const imagePaths = Array.isArray(body.imagePaths) ? body.imagePaths.slice(0, 5) : [];
 
-    if (!titulo || !conteudo) {
+    if (!titulo && imagePaths.length === 0) {
       return NextResponse.json(
-        { error: "Informe o tema e o conteúdo clínico do protocolo." },
+        { error: "Informe o tema ou páginas do protocolo." },
         { status: 400 }
       );
     }
@@ -36,22 +38,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "GEMINI_API_KEY não configurada." }, { status: 500 });
     }
 
+    // Baixa até 4 páginas WebP originais do bucket privado para ler doses e tabelas EXATAS
+    const imageParts: { inlineData: { mimeType: string; data: string } }[] = [];
+    for (const path of imagePaths.slice(0, 4)) {
+      if (!path || path.includes("..")) continue;
+      const { data: blob } = await supabase.storage.from("paginas-webp").download(path);
+      if (blob) {
+        const buf = Buffer.from(await blob.arrayBuffer());
+        imageParts.push({
+          inlineData: {
+            mimeType: "image/webp",
+            data: buf.toString("base64"),
+          },
+        });
+      }
+    }
+
     const ai = new GoogleGenAI({ apiKey });
-    const prompt = `Você é um médico de família na Atenção Primária (APS / SUS).
-Com base EXCLUSIVAMENTE nos trechos oficiais do protocolo abaixo sobre "${titulo}", gere um modelo prático de PRESCRIÇÃO PRONTA para copiar e colar no prontuário eletrônico ou receita do paciente.
+    const prompt = `Você é um médico de família na Atenção Primária à Saúde (APS / SUS Brasil).
+Leia visualmente as páginas originais anexadas do manual clínico sobre "${titulo}" (incluindo tabelas de doses, quadros de posologia e exemplos de receita) e monte um RECEITUÁRIO PRONTO PARA COPIAR E COLAR no prontuário/receita do paciente.
 
-REGRAS OBRIGATÓRIAS:
-1. Utilize APENAS medicamentos, doses e posologias explicitamente citados no texto fornecido. NÃO invente doses.
-2. Formato limpo, pronto para colar no prontuário (sem markdown excessivo, sem asteriscos):
-   USO ORAL / TÓPICO / INJETÁVEL (conforme o caso)
-   1) Medicamento + concentração — quantidade
-      Posologia clara ao paciente (ex: Tomar 1 comprimido de 12/12h por X dias).
-   ORIENTAÇÕES AO PACIENTE:
-   - Pontos práticos de uso, sinais de alerta e retorno.
-3. Se o texto citar mais de uma opção (ex: 1ª linha e alternativa), separe claramente em "OPÇÃO 1ª LINHA" e "ALTERNATIVA".
+REGRAS ESTRITAS:
+1. NUNCA escreva preâmbulos ("Com base no protocolo...", "Nota:", "---", comentários). Comece DIRETO pela via de administração (ex: USO ORAL ou USO INALATÓRIO).
+2. NUNCA use siglas vagas como "CI + LABA" ou "SABA" na prescrição final. Escreva o FÁRMACO REAL, CONCENTRAÇÃO NUMÉRICA EXATA, APRESENTAÇÃO (ex: comprimido, spray/aerossol, cápsula inalatória, suspensão) e QUANTIDADE conforme as tabelas do manual e apresentações padrão do SUS/RENAME (ex: "Beclometasona 250 mcg/jato (spray) — 1 frasco", "Salbutamol 100 mcg/jato (spray) — 1 frasco", "Formoterol 6 mcg + Budesonida 200 mcg (cápsula inalatória) — 1 frasco c/ 60 cáps").
+3. Escreva posologia clara em linguagem acessível ao paciente (ex: "Inalar 1 jato de 12 em 12 horas, uso contínuo. Lavar a boca com água após o uso.").
+4. Se houver opções de 1ª linha e alternativa, separe de forma ultra-objetiva (ex: "=== OPÇÃO 1 (1ª LINHA) ===" e "=== OPÇÃO 2 (ALTERNATIVA) ===").
+5. Feche com um bloco curto "ORIENTAÇÕES:" (máximo 3 a 4 linhas práticas).
 
-CONTEÚDO OFICIAL DO PROTOCOLO:
-${conteudo.slice(0, 12000)}`;
+Contexto adicional de busca:
+${conteudo.slice(0, 3000)}`;
+
+    const contents = [...imageParts, prompt];
 
     let text = "";
     let lastErr: unknown;
@@ -59,7 +76,7 @@ ${conteudo.slice(0, 12000)}`;
       try {
         const resp = await ai.models.generateContent({
           model,
-          contents: prompt,
+          contents,
           config: { temperature: 0.1 },
         });
         text = (resp.text || "").trim();

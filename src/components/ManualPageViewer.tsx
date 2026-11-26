@@ -195,12 +195,25 @@ export function ManualPageViewer({ item }: ManualPageViewerProps) {
         )
         .join("\n\n");
 
+      // Prioriza páginas de receita/tratamento/tabela para leitura visual exata de doses
+      const prioritizedPages = [...pagesToUse].sort((a, b) => {
+        const score = (p: ChapterPageFull) => {
+          const s = `${p.subtitulo_pagina} ${p.texto_indexacao}`.toLowerCase();
+          let pts = 0;
+          if (p.possui_receita_modelo) pts += 10;
+          if (/tratamento|farmacol|dose|prescri|medicament|receita|tabela/.test(s)) pts += 5;
+          return pts;
+        };
+        return score(b) - score(a);
+      });
+
       const res = await fetch("/api/prescription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           titulo: item.titulo,
           conteudo: contexto,
+          imagePaths: prioritizedPages.slice(0, 4).map((p) => p.imagem_webp_path),
         }),
       });
       const data = (await res.json()) as { prescription?: string; error?: string };
