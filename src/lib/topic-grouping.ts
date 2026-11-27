@@ -7,7 +7,14 @@ const JUNK_PATTERNS = [
   "indice de ",
   "indice ",
   "capa de secao",
+  "capa de capitulo",
   "capa do modulo",
+  "capa ou pagina",
+  "pagina de identificacao",
+  "creditos",
+  "equipe tecnica",
+  "ficha tecnica",
+  "catalogo de manuais",
   "referencias bibliograficas",
   "prefacio",
   "expediente",
@@ -26,6 +33,11 @@ const JUNK_PATTERNS = [
   "musculoesqueleticas",
   "urologicas e renais",
   "dermatologicas",
+  "saude da mulher e puericultura",
+  "saude da mulher e gestacao",
+  "aleitamento materno, puerperio e puericultura",
+  "aleitamento materno e puerperio",
+  "acompanhamento da crianca na atencao primaria",
 ];
 
 const STOP_WORDS = new Set([
@@ -81,15 +93,30 @@ export function isNonClinicalFrontMatter(
 
   if (
     sub.includes("capa de secao") ||
+    sub.includes("capa de capitulo") ||
     sub.includes("capa do modulo") ||
+    sub.includes("capa de identificacao") ||
     sub.includes("referencias bibliograficas") ||
+    sub.includes("lista de referencias") ||
+    sub.includes("termo de responsabilidade") ||
+    sub.includes("direitos autorais") ||
+    sub.includes("sobre o autor") ||
+    sub.includes("roteiros de consulta") ||
     sub.startsWith("indice ") ||
     sub.startsWith("sumario ")
   ) {
     return true;
   }
 
-  return JUNK_PATTERNS.some((p) => cap === p || cap.startsWith(p) || combined.includes("sobre o autor"));
+  return JUNK_PATTERNS.some(
+    (p) =>
+      cap === p ||
+      cap.startsWith(p) ||
+      cap.includes("creditos") ||
+      cap.includes("equipe tecnica") ||
+      cap.includes("catalogo") ||
+      combined.includes("sobre o autor")
+  );
 }
 
 export function getClinicalTopicKey(manualId: string, capitulo: string): string {
